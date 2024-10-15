@@ -3,5 +3,9 @@
 <p align="center">The code for cWDM will soon be released on this repository! Stay tuned!</p>
 <p align="center">
     <img width="750" src="assets/Overview.png"/>
+</p>
+
+<p align="center">
     <img width="750" src="assets/cWDM.png"/>
 </p>
+
