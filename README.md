@@ -1,34 +1,21 @@
-# cWDM: Conditional Wavelet Diffusion Models for Cross-Modality 3D Medical Image Synthesis
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![arXiv](https://img.shields.io/badge/arXiv-2411.17203-b31b1b.svg)](https://arxiv.org/abs/2411.17203)
+# "Fast-"cWDM: Conditional Wavelet Diffusion Models for Cross-Modality 3D Medical Image Synthesis
 
-This is the official PyTorch implementation of the paper **cWDM: Conditional Wavelet Diffusion Models for Cross-Modality 3D Medical Image Synthesis** by [Paul Friedrich](https://pfriedri.github.io/), Alicia Durrer, Julia Wolleb and Philippe C. Cattin.
+### "The Intersection of Learnable Timestep Scheduling and Wavelet-Based Diffusion Models: A Literature Review" Conclusion
 
+"The intersection of learnable timestep scheduling and wavelet-based diffusion models represents a significant untapped research opportunity with substantial theoretical and practical implications. The literature reveals robust individual advances in both domains, established theoretical foundations for integration, and compelling evidence of benefits in medical imaging applications. However, the specific combination remains unexplored, presenting a clear opportunity for novel contributions.
 
-If you find our work useful, please consider to :star: **star this repository** and :memo: **cite our paper**:
-```bibtex
-@article{friedrich2024cwdm,
-         title={cWDM: Conditional Wavelet Diffusion Models for Cross-Modality 3D Medical Image Synthesis},
-         author={Paul Friedrich and Alicia Durrer and Julia Wolleb and Philippe C. Cattin},
-         year={2024},
-         journal={arXiv preprint arXiv:2411.17203}}
-```
+The most promising immediate direction involves developing **Frequency-Adaptive Timestep Scheduling (FATS)**, which could leverage wavelet energy statistics to learn optimal noise schedules for different frequency bands. This approach addresses current limitations in both domains while opening new possibilities for more efficient, controllable, and theoretically grounded diffusion models. The computational feasibility is strong, with existing wavelet implementations and established scheduling optimization techniques providing a solid foundation.
+
+This research direction has the potential to significantly advance generative modeling by providing more efficient and principled approaches that better exploit the natural hierarchical structure of visual data, with particular promise for medical imaging applications where both computational efficiency and generation quality are paramount."
 
 ## Paper Abstract
-This paper contributes to the "BraTS 2024 Brain MR Image Synthesis Challenge" and presents a conditional Wavelet Diffusion Model (cWDM) for directly solving a paired image-to-image translation task on high-resolution volumes. While deep learning-based brain tumor segmentation models have demonstrated clear clinical utility, they typically require MR scans from various modalities (T1, T1ce, T2, FLAIR) as input. However, due to time constraints or imaging artifacts, some of these modalities may be missing, hindering the application of well-performing segmentation algorithms in clinical routine.
-To address this issue, we propose a method that synthesizes one missing modality image conditioned on three available images, enabling the application of downstream segmentation models. We treat this paired image-to-image translation task as a conditional generation problem and solve it by combining a Wavelet Diffusion Model for high-resolution 3D image synthesis with a simple conditioning strategy. This approach allows us to directly apply our model to full-resolution volumes, avoiding artifacts caused by slice- or patch-wise data processing. While this work focuses on a specific application, the presented method can be applied to all kinds of paired image-to-image translation problems, such as CT-MR and MR-PET translation, or mask-conditioned anatomically guided image generation.
-
-<p>
-    <img width="750" src="assets/cWDM.png"/>
-</p>
-
 
 ## Dependencies
 We recommend using a [conda](https://github.com/conda-forge/miniforge#mambaforge) environment to install the required dependencies.
-You can create and activate such an environment called `cwdm` by running the following commands:
+You can create and activate such an environment called `fast-cwdm` by running the following commands:
 ```sh
 mamba env create -f environment.yml
-mamba activate cwdm
+mamba activate fast-cwdm
 ```
 
 ## Training & Sampling
@@ -37,16 +24,9 @@ For executing the script, simply use the following command:
 ```sh
 bash run.sh
 ```
-**Supported settings** (set in `run.sh` file):
-
-MODE: `'training'` (for training a model), `'sampling'` (to sample from a model), `'auto'` (missing modality detection and synthesis)
-
-CONTR: `'t1n'`, `'t1c'`, `'t2w'`, `'t2f'`
-
-**The script can easily be adapted for other conditional generation tasks like MR-CT and MR-PET translation, as well as mask-conditioned anatomically guided image generation.**
 
 ## Pre-trained model weights
-We release pre-trained model weights on [HuggingFace](https://huggingface.co/pfriedri/cwdm).
+We release pre-trained model weights on [HuggingFace](https://huggingface.co/).
 
 Simply download the weights and replace the path to the model weights in the `sample_auto.py` script.
 
@@ -75,8 +55,6 @@ data
         ...       
 ```
 
-We additionally provide a script `dropout_modality.py` to randomly drop one modality and create a pseudo-validation dataset.
-
 ## Acknowledgements
 Our code is based on / inspired by the following repositories:
-* https://github.com/pfriedri/wdm-3d (published under [MIT License](https://github.com/pfriedri/wdm-3d/blob/main/LICENSE))
+* [https://github.com/pfriedri/cwdm](https://github.com/pfriedri/cwdm) (published under MIT License)
