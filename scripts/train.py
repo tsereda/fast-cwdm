@@ -7,6 +7,7 @@ import numpy as np
 import random
 import sys
 import torch as th
+import wandb
 
 sys.path.append(".")
 sys.path.append("..")
@@ -26,6 +27,15 @@ def main():
     th.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
+    # --- wandb integration ---
+    wandb.init(
+        project="cwmd-3d-brats",
+        entity="timgsereda",
+        config=vars(args),
+        mode="online"
+    )
+    # --- end wandb integration ---
 
     summary_writer = None
     if args.use_tensorboard:
