@@ -6,8 +6,8 @@ metadata:
     app: cwdm-brats
 spec:
   nodeSelector:
-    topology.kubernetes.io/region: us-west
-    nautilus.io/linstor: "true"
+    #topology.kubernetes.io/region: us-west
+    #nautilus.io/linstor: "true"
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -16,11 +16,11 @@ spec:
           - key: nvidia.com/gpu.product
             operator: In
             values:
+            - NVIDIA-A10
+            - NVIDIA-GeForce-RTX-3090
             - NVIDIA-L40
-            - Tesla-V100-SXM2-32GB
             - NVIDIA-A40
-            - NVIDIA-RTX-A6000
-            - Quadro-RTX-8000
+
   tolerations:
     - key: nvidia.com/gpu
       operator: Exists
