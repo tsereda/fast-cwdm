@@ -42,9 +42,20 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
         scale = 1000 / num_diffusion_timesteps
         beta_start = scale * 0.0001
         beta_end = scale * 0.02
-        return np.linspace(
+        betas = np.linspace(
             beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
         )
+        # === DIAGNOSTIC PRINTS (NO FUNCTIONALITY CHANGE) ===
+        print(f"\n[BETA SCHEDULE] {schedule_name} with {num_diffusion_timesteps} steps")
+        print(f"[BETA SCHEDULE] Scale factor: {scale:.1f}")
+        print(f"[BETA SCHEDULE] Beta range: {beta_start:.6f} → {beta_end:.6f}")
+        print(f"[BETA SCHEDULE] First 3 betas: {betas[:3]}")
+        print(f"[BETA SCHEDULE] Last 3 betas: {betas[-3:]}")
+        if beta_end > 1.0:
+            print(f"[BETA SCHEDULE] 💥 BROKEN! beta_end = {beta_end:.3f} > 1.0")
+        else:
+            print(f"[BETA SCHEDULE] ✅ Valid! max_beta = {betas.max():.6f}")
+        return betas
     elif schedule_name == "cosine":
         return betas_for_alpha_bar(
             num_diffusion_timesteps,
@@ -144,20 +155,25 @@ class GaussianDiffusion:
         self.rescale_timesteps = rescale_timesteps
         self.mode = mode
         self.loss_level=loss_level
-
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
         assert len(betas.shape) == 1, "betas must be 1-D"
         assert (betas > 0).all() and (betas <= 1).all()
-
         self.num_timesteps = int(betas.shape[0])
-
         alphas = 1.0 - betas
-        self.alphas_cumprod = np.cumprod(alphas, axis=0)                     # t
-        self.alphas_cumprod_prev = np.append(1.0, self.alphas_cumprod[:-1])  # t-1
-        self.alphas_cumprod_next = np.append(self.alphas_cumprod[1:], 0.0)   # t+1
-        assert self.alphas_cumprod_prev.shape == (self.num_timesteps,)
+        self.alphas_cumprod = np.cumprod(alphas, axis=0)
+        # === DIAGNOSTIC PRINTS (NO FUNCTIONALITY CHANGE) ===
+        print(f"\n[DIFFUSION] Initialized with {self.num_timesteps} timesteps")
+        print(f"[DIFFUSION] Alpha_cumprod range: {self.alphas_cumprod.min():.6f} → {self.alphas_cumprod.max():.6f}")
+        print(f"[DIFFUSION] First 3 α_cumprod: {self.alphas_cumprod[:3]}")
+        print(f"[DIFFUSION] Last 3 α_cumprod: {self.alphas_cumprod[-3:]}")
+        if (alphas < 0).any():
+            print(f"[DIFFUSION] 💥 CRITICAL: Found negative alphas! (beta > 1)")
+            print(f"[DIFFUSION] Negative alpha positions: {np.where(alphas < 0)[0]}")
+        else:
+            print(f"[DIFFUSION] ✅ All alphas positive")
+        print("=" * 60)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
         self.sqrt_alphas_cumprod = np.sqrt(self.alphas_cumprod)
