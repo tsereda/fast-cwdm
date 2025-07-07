@@ -6,8 +6,8 @@ metadata:
     app: cwdm-brats
 spec:
   nodeSelector:
-    topology.kubernetes.io/region: us-west
-    nautilus.io/linstor: "true"
+    #topology.kubernetes.io/region: us-west
+    #nautilus.io/linstor: "true"
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -16,7 +16,11 @@ spec:
           - key: nvidia.com/gpu.product
             operator: In
             values:
+            - NVIDIA-A10
+            - NVIDIA-GeForce-RTX-3090
             - NVIDIA-L40
+            - NVIDIA-A40
+
   tolerations:
     - key: nvidia.com/gpu
       operator: Exists
@@ -54,10 +58,12 @@ spec:
           value: "timgsereda"
         - name: WANDB_MODE
           value: "online"
+        - name: USE_TENSORBOARD
+          value: "true"
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
+          git clone -b wandb https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
           cd ${REPO_PATH}
           
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
@@ -67,7 +73,7 @@ spec:
             if [ -f "$zip_file" ]; then
               echo "Extracting ${dataset}..."
               cd /data && 7z x "$zip_file" -y
-              sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}"
+              #sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}"
               cd ${REPO_PATH}
             fi
           done
@@ -76,7 +82,7 @@ spec:
           mkdir -p datasets/BRATS2023/validation
           
           if [ -d "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData" ]; then
-            echo "Copying training data (this may take a few minutes)..."
+            echo "Copying training data..."
             cp -r /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData/* datasets/BRATS2023/training/
             echo "Training data copied successfully"
           fi
@@ -91,7 +97,7 @@ spec:
           echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
           echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
           
-          pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile
+          pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
           
           python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
           python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
@@ -105,6 +111,14 @@ spec:
           
           conda info --envs
           python --version
+          
+          if [ "$USE_TENSORBOARD" = "true" ]; then
+            LOGDIR="${REPO_PATH}/runs"
+            echo "Launching TensorBoard on port 6006, logdir: $LOGDIR"
+            tensorboard --logdir "$LOGDIR" --host 0.0.0.0 --port 6006 &
+            echo "To access TensorBoard, run:"
+            echo "kubectl port-forward pod/cwdm-brats 6006:6006"
+          fi
           
           bash run.sh
           

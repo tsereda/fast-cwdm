@@ -8,8 +8,10 @@ import torch.distributed as dist
 import torch.utils.tensorboard
 from torch.optim import AdamW
 import torch.cuda.amp as amp
+import wandb
 
 import itertools
+import numpy as np
 
 from . import dist_util, logger
 from .resample import LossAwareSampler, UniformSampler
@@ -20,7 +22,10 @@ INITIAL_LOG_LOSS_SCALE = 20.0
 def visualize(img):
     _min = img.min()
     _max = img.max()
-    normalized_img = (img - _min)/ (_max - _min)
+    if _max > _min:
+        normalized_img = (img - _min) / (_max - _min)
+    else:
+        normalized_img = np.zeros_like(img)
     return normalized_img
 
 class TrainLoop:
@@ -168,23 +173,38 @@ class TrainLoop:
 
             names = ["LLL", "LLH", "LHL", "LHH", "HLL", "HLH", "HHL", "HHH"]
 
+            # TensorBoard logging
             if self.summary_writer is not None:
                 self.summary_writer.add_scalar('time/load', t_load, global_step=self.step + self.resume_step)
                 self.summary_writer.add_scalar('time/forward', t_fwd, global_step=self.step + self.resume_step)
                 self.summary_writer.add_scalar('time/total', t_total, global_step=self.step + self.resume_step)
                 self.summary_writer.add_scalar('loss/MSE', lossmse.item(), global_step=self.step + self.resume_step)
 
+            # wandb logging
+            wandb_log_dict = {
+                'time/load': t_load,
+                'time/forward': t_fwd,
+                'time/total': t_total,
+                'loss/MSE': lossmse.item(),
+                'step': self.step + self.resume_step
+            }
+
             if self.step % 200 == 0:
                 image_size = sample_idwt.size()[2]
                 midplane = sample_idwt[0, 0, :, :, image_size // 2]
                 self.summary_writer.add_image('sample/x_0', midplane.unsqueeze(0),
                                               global_step=self.step + self.resume_step)
+                # wandb image logging
+                img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
+                wandb_log_dict['sample/x_0'] = wandb.Image(img, caption='sample/x_0')
 
                 image_size = sample.size()[2]
                 for ch in range(8):
                     midplane = sample[0, ch, :, :, image_size // 2]
                     self.summary_writer.add_image('sample/{}'.format(names[ch]), midplane.unsqueeze(0),
                                                   global_step=self.step + self.resume_step)
+                    img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
+                    wandb_log_dict[f'sample/{names[ch]}'] = wandb.Image(img, caption=f'sample/{names[ch]}')
 
                 if self.mode == 'i2i':
                     if not self.contr == 't1n':
@@ -192,20 +212,30 @@ class TrainLoop:
                         midplane = batch['t1n'][0, 0, :, :, image_size // 2]
                         self.summary_writer.add_image('source/t1n', midplane.unsqueeze(0),
                                                       global_step=self.step + self.resume_step)
+                        img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
+                        wandb_log_dict['source/t1n'] = wandb.Image(img, caption='source/t1n')
                     if not self.contr == 't1c':
                         image_size = batch['t1c'].size()[2]
                         midplane = batch['t1c'][0, 0, :, :, image_size // 2]
                         self.summary_writer.add_image('source/t1c', midplane.unsqueeze(0),
                                                       global_step=self.step + self.resume_step)
+                        img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
+                        wandb_log_dict['source/t1c'] = wandb.Image(img, caption='source/t1c')
                     if not self.contr == 't2w':
                         midplane = batch['t2w'][0, 0, :, :, image_size // 2]
                         self.summary_writer.add_image('source/t2w', midplane.unsqueeze(0),
                                                       global_step=self.step + self.resume_step)
+                        img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
+                        wandb_log_dict['source/t2w'] = wandb.Image(img, caption='source/t2w')
                     if not self.contr == 't2f':
                         midplane = batch['t2f'][0, 0, :, :, image_size // 2]
                         self.summary_writer.add_image('source/t2f', midplane.unsqueeze(0),
                                                       global_step=self.step + self.resume_step)
+                        img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
+                        wandb_log_dict['source/t2f'] = wandb.Image(img, caption='source/t2f')
 
+            # Actually log to wandb
+            wandb.log(wandb_log_dict, step=self.step + self.resume_step)
 
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
