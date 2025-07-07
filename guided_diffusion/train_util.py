@@ -55,6 +55,8 @@ class TrainLoop:
         summary_writer=None,
         mode='default',
         loss_level='image',
+        use_fast_ddpm=False,          # NEW: Enable Fast-DDPM
+        fast_ddpm_strategy='non-uniform',  # NEW: Fast-DDPM sampling strategy
     ):
         self.summary_writer = summary_writer
         self.mode = mode
@@ -82,33 +84,43 @@ class TrainLoop:
             self.grad_scaler = amp.GradScaler()
         else:
             self.grad_scaler = amp.GradScaler(enabled=False)
-
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
         self.weight_decay = weight_decay
         self.lr_anneal_steps = lr_anneal_steps
-
         self.dwt = DWT_3D('haar')
         self.idwt = IDWT_3D('haar')
-
         self.loss_level = loss_level
-
         self.step = 1
         self.resume_step = resume_step
         self.global_batch = self.batch_size * dist.get_world_size()
-
         self.sync_cuda = th.cuda.is_available()
-
         self._load_and_sync_parameters()
-
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         if self.resume_step:
             print("Resume Step: " + str(self.resume_step))
             self._load_optimizer_state()
-
         if not th.cuda.is_available():
             logger.warn(
                 "Training requires CUDA. "
             )
+        # Fast-DDPM integration
+        self.use_fast_ddpm = use_fast_ddpm
+        self.fast_ddpm_strategy = fast_ddpm_strategy
+        if self.use_fast_ddpm:
+            from .gaussian_diffusion import FastDDPMScheduleSampler
+            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
+                num_timesteps=diffusion.num_timesteps,
+                strategy=fast_ddpm_strategy
+            )
+            print(f"[TRAIN] Using Fast-DDPM with {fast_dddm_strategy} sampling")
+        # Fast-DDPM/SpacedDiffusion integration: always initialize fast_ddpm_sampler if needed
+        if hasattr(self.diffusion, 'timestep_map'):
+            from .gaussian_diffusion import FastDDPMScheduleSampler
+            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
+                num_timesteps=len(self.diffusion.timestep_map),
+                strategy=self.fast_ddpm_strategy
+            )
+            print(f"[TRAIN] Using Fast-DDPM/SpacedDiffusion with {self.fast_ddpm_strategy} sampling")
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -192,8 +204,9 @@ class TrainLoop:
             if self.step % 200 == 0:
                 image_size = sample_idwt.size()[2]
                 midplane = sample_idwt[0, 0, :, :, image_size // 2]
-                self.summary_writer.add_image('sample/x_0', midplane.unsqueeze(0),
-                                              global_step=self.step + self.resume_step)
+                if self.summary_writer is not None:
+                    self.summary_writer.add_image('sample/x_0', midplane.unsqueeze(0),
+                                                  global_step=self.step + self.resume_step)
                 # wandb image logging
                 img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                 wandb_log_dict['sample/x_0'] = wandb.Image(img, caption='sample/x_0')
@@ -201,8 +214,9 @@ class TrainLoop:
                 image_size = sample.size()[2]
                 for ch in range(8):
                     midplane = sample[0, ch, :, :, image_size // 2]
-                    self.summary_writer.add_image('sample/{}'.format(names[ch]), midplane.unsqueeze(0),
-                                                  global_step=self.step + self.resume_step)
+                    if self.summary_writer is not None:
+                        self.summary_writer.add_image('sample/{}'.format(names[ch]), midplane.unsqueeze(0),
+                                                      global_step=self.step + self.resume_step)
                     img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                     wandb_log_dict[f'sample/{names[ch]}'] = wandb.Image(img, caption=f'sample/{names[ch]}')
 
@@ -210,27 +224,31 @@ class TrainLoop:
                     if not self.contr == 't1n':
                         image_size = batch['t1n'].size()[2]
                         midplane = batch['t1n'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t1n', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
+                        if self.summary_writer is not None:
+                            self.summary_writer.add_image('source/t1n', midplane.unsqueeze(0),
+                                                          global_step=self.step + self.resume_step)
                         img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                         wandb_log_dict['source/t1n'] = wandb.Image(img, caption='source/t1n')
                     if not self.contr == 't1c':
                         image_size = batch['t1c'].size()[2]
                         midplane = batch['t1c'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t1c', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
+                        if self.summary_writer is not None:
+                            self.summary_writer.add_image('source/t1c', midplane.unsqueeze(0),
+                                                          global_step=self.step + self.resume_step)
                         img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                         wandb_log_dict['source/t1c'] = wandb.Image(img, caption='source/t1c')
                     if not self.contr == 't2w':
                         midplane = batch['t2w'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t2w', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
+                        if self.summary_writer is not None:
+                            self.summary_writer.add_image('source/t2w', midplane.unsqueeze(0),
+                                                          global_step=self.step + self.resume_step)
                         img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                         wandb_log_dict['source/t2w'] = wandb.Image(img, caption='source/t2w')
                     if not self.contr == 't2f':
                         midplane = batch['t2f'][0, 0, :, :, image_size // 2]
-                        self.summary_writer.add_image('source/t2f', midplane.unsqueeze(0),
-                                                      global_step=self.step + self.resume_step)
+                        if self.summary_writer is not None:
+                            self.summary_writer.add_image('source/t2f', midplane.unsqueeze(0),
+                                                          global_step=self.step + self.resume_step)
                         img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                         wandb_log_dict['source/t2f'] = wandb.Image(img, caption='source/t2f')
 
@@ -288,19 +306,28 @@ class TrainLoop:
             p.grad = None
 
         if self.mode == 'i2i':
-            t, weights = self.schedule_sampler.sample(batch['t1n'].shape[0], dist_util.dev())
+            batch_size = batch['t1n'].shape[0]
         else:
-            t, weights = self.schedule_sampler.sample(batch.shape[0], dist_util.dev())
+            batch_size = batch.shape[0]
 
-        compute_losses = functools.partial(self.diffusion.training_losses,
-                                           self.model,
-                                           x_start=batch,
-                                           t=t,
-                                           model_kwargs=cond,
-                                           labels=label,
-                                           mode=self.mode,
-                                           contr=self.contr
-                                           )
+        # Sample timesteps
+        if self.use_fast_ddpm or hasattr(self.diffusion, 'timestep_map'):
+            t, weights = self.fast_ddpm_sampler.sample(batch_size, dist_util.dev())
+            t = t.long().to(weights.device)  # Always use as local index
+        else:
+            t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
+        print(f"[DEBUG] Timesteps (local indices): {t.tolist()}")
+
+        compute_losses = functools.partial(
+            self.diffusion.training_losses,
+            self.model,
+            x_start=batch,
+            t=t,
+            model_kwargs=cond,
+            labels=label,
+            mode=self.mode,
+            contr=self.contr
+        )
         losses1 = compute_losses()
 
         if isinstance(self.schedule_sampler, LossAwareSampler):
@@ -312,22 +339,23 @@ class TrainLoop:
         sample_idwt = losses1[2]    # Inverse wavelet transformed denoised subbands at t=0
 
         # Log wavelet level loss
-        self.summary_writer.add_scalar('loss/mse_wav_lll', losses["mse_wav"][0].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_llh', losses["mse_wav"][1].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_lhl', losses["mse_wav"][2].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_lhh', losses["mse_wav"][3].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hll', losses["mse_wav"][4].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hlh', losses["mse_wav"][5].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hhl', losses["mse_wav"][6].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hhh', losses["mse_wav"][7].item(),
-                                       global_step=self.step + self.resume_step)
+        if self.summary_writer is not None:
+            self.summary_writer.add_scalar('loss/mse_wav_lll', losses["mse_wav"][0].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_llh', losses["mse_wav"][1].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_lhl', losses["mse_wav"][2].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_lhh', losses["mse_wav"][3].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hll', losses["mse_wav"][4].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hlh', losses["mse_wav"][5].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hhl', losses["mse_wav"][6].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hhh', losses["mse_wav"][7].item(),
+                                           global_step=self.step + self.resume_step)
 
         weights = th.ones(len(losses["mse_wav"])).cuda()  # Equally weight all wavelet channel losses
 

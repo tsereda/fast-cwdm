@@ -26,6 +26,8 @@ def diffusion_defaults():
         dims=2,
         num_groups=32,
         in_channels=1,
+        use_fast_ddpm=False,              # NEW
+        fast_ddpm_strategy='non-uniform', # NEW: 'uniform' or 'non-uniform'
     )
 
 
@@ -78,6 +80,8 @@ def model_and_diffusion_defaults():
         mode='default',
         use_freq=False,
         predict_xstart=False,
+        use_fast_ddpm=False,              # NEW
+        fast_ddpm_strategy='non-uniform', # NEW
     )
     res.update(diffusion_defaults())
     return res
@@ -123,6 +127,8 @@ def create_model_and_diffusion(
     mode,
     use_freq,
     dataset,
+    use_fast_ddpm=False,              # NEW
+    fast_ddpm_strategy='non-uniform', # NEW
 ):
     model = create_model(
         image_size,
@@ -160,6 +166,8 @@ def create_model_and_diffusion(
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
         mode=mode,
+        use_fast_ddpm=use_fast_ddpm,              # NEW
+        fast_ddpm_strategy=fast_ddpm_strategy,    # NEW
     )
     return model, diffusion
 
@@ -515,8 +523,15 @@ def create_gaussian_diffusion(
     rescale_learned_sigmas=False,
     timestep_respacing="",
     mode='default',
+    use_fast_ddpm=False,
+    fast_ddpm_strategy='non-uniform',
+    **kwargs
 ):
+    # Remove keys not accepted by SpacedDiffusion/GaussianDiffusion
+    kwargs.pop('use_fast_ddpm', None)
+    kwargs.pop('fast_ddpm_strategy', None)
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
+
     if use_kl:
         loss_type = gd.LossType.RESCALED_KL
     elif rescale_learned_sigmas:
@@ -543,6 +558,7 @@ def create_gaussian_diffusion(
         loss_type=loss_type,
         rescale_timesteps=rescale_timesteps,
         mode=mode,
+        **kwargs
     )
 
 

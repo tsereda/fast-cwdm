@@ -31,31 +31,40 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
     Get a pre-defined beta schedule for the given name.
 
-    The beta schedule library consists of beta schedules which remain similar
-    in the limit of num_diffusion_timesteps.
-    Beta schedules may be added, but should not be removed or changed once
-    they are committed to maintain backwards compatibility.
+    FIXED VERSION: Uses Fast-DDPM approach for < 1000 timesteps
     """
+    import numpy as np
+    import math
     if schedule_name == "linear":
-        # Linear schedule from Ho et al, extended to work for any number of
-        # diffusion steps.
-        scale = 1000 / num_diffusion_timesteps
-        beta_start = scale * 0.0001
-        beta_end = scale * 0.02
-        betas = np.linspace(
-            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
-        )
-        # === DIAGNOSTIC PRINTS (NO FUNCTIONALITY CHANGE) ===
-        print(f"\n[BETA SCHEDULE] {schedule_name} with {num_diffusion_timesteps} steps")
-        print(f"[BETA SCHEDULE] Scale factor: {scale:.1f}")
-        print(f"[BETA SCHEDULE] Beta range: {beta_start:.6f} → {beta_end:.6f}")
-        print(f"[BETA SCHEDULE] First 3 betas: {betas[:3]}")
-        print(f"[BETA SCHEDULE] Last 3 betas: {betas[-3:]}")
-        if beta_end > 1.0:
-            print(f"[BETA SCHEDULE] 💥 BROKEN! beta_end = {beta_end:.3f} > 1.0")
+        if num_diffusion_timesteps == 1000:
+            # Original working schedule for 1000 steps
+            scale = 1000 / num_diffusion_timesteps  # scale = 1.0
+            beta_start = scale * 0.0001  # = 0.0001
+            beta_end = scale * 0.02      # = 0.02
+            print(f"[BETA SCHEDULE] Using original 1000-step schedule")
+            print(f"[BETA SCHEDULE] Beta range: {beta_start:.6f} → {beta_end:.6f}")
+            return np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
         else:
-            print(f"[BETA SCHEDULE] ✅ Valid! max_beta = {betas.max():.6f}")
-        return betas
+            # Fast-DDPM approach: Sample from proven 1000-step alpha_cumprod curve
+            print(f"[BETA SCHEDULE] Using Fast-DDPM approach for {num_diffusion_timesteps} steps")
+            full_betas = np.linspace(0.0001, 0.02, 1000, dtype=np.float64)
+            full_alphas = 1.0 - full_betas
+            full_alphas_cumprod = np.cumprod(full_alphas, axis=0)
+            # Strategic sampling: non-uniform for 10, uniform otherwise
+            if num_diffusion_timesteps == 10:
+                indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
+                print(f"[BETA SCHEDULE] Using non-uniform sampling: {indices}")
+            else:
+                indices = np.linspace(0, 999, num_diffusion_timesteps, dtype=int)
+                print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
+            sampled_alphas_cumprod = full_alphas_cumprod[indices]
+            alphas_cumprod_prev = np.concatenate([[1.0], sampled_alphas_cumprod[:-1]])
+            alphas = sampled_alphas_cumprod / alphas_cumprod_prev
+            betas = 1.0 - alphas
+            betas = np.clip(betas, 0.0001, 0.999)
+            print(f"[BETA SCHEDULE] ✅ Fast-DDPM betas range: {betas.min():.6f} → {betas.max():.6f}")
+            print(f"[BETA SCHEDULE] Alpha_cumprod range: {sampled_alphas_cumprod.min():.6f} → {sampled_alphas_cumprod.max():.6f}")
+            return betas
     elif schedule_name == "cosine":
         return betas_for_alpha_bar(
             num_diffusion_timesteps,
@@ -64,7 +73,33 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
-
+# Fast-DDPM timestep sampler
+class FastDDPMScheduleSampler:
+    """
+    Fast-DDPM timestep sampler that uses strategic sampling from fewer timesteps
+    """
+    def __init__(self, num_timesteps=10, strategy='non-uniform'):
+        import numpy as np
+        self.num_timesteps = num_timesteps
+        self.strategy = strategy
+        if strategy == 'non-uniform' and num_timesteps == 10:
+            self.timestep_indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
+        elif strategy == 'uniform':
+            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
+        else:
+            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
+        print(f"[FAST-DDPM] Using {strategy} sampling with indices: {self.timestep_indices}")
+    def sample(self, batch_size, device):
+        import numpy as np
+        import torch
+        n = batch_size
+        idx_1 = np.random.randint(0, len(self.timestep_indices), size=(n // 2 + 1,))
+        idx_2 = len(self.timestep_indices) - idx_1 - 1
+        idx = np.concatenate([idx_1, idx_2], axis=0)[:n]
+        # Return local indices for SpacedDiffusion/Fast-DDPM
+        idx_tensor = torch.from_numpy(idx).long().to(device)
+        weights = torch.ones_like(idx_tensor).float()
+        return idx_tensor, weights
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
     Create a beta schedule that discretizes the given alpha_t_bar function,
@@ -1251,6 +1286,10 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
                             dimension equal to the length of timesteps.
     :return: a tensor of shape [batch_size, 1, ...] where the shape has K dims.
     """
+    # Debug print to catch out-of-bounds errors
+    if (timesteps.min() < 0 or timesteps.max() >= len(arr)):
+        print("[ERROR] _extract_into_tensor: out-of-bounds index! t min:", timesteps.min().item(), "t max:", timesteps.max().item(), "arr len:", len(arr))
+        raise IndexError(f"Timesteps out of bounds: min={timesteps.min().item()}, max={timesteps.max().item()}, arr len={len(arr)}")
     res = th.from_numpy(arr).to(device=timesteps.device)[timesteps].float()
     while len(res.shape) < len(broadcast_shape):
         res = res[..., None]
