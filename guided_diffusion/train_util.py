@@ -333,22 +333,23 @@ class TrainLoop:
         sample_idwt = losses1[2]    # Inverse wavelet transformed denoised subbands at t=0
 
         # Log wavelet level loss
-        self.summary_writer.add_scalar('loss/mse_wav_lll', losses["mse_wav"][0].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_llh', losses["mse_wav"][1].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_lhl', losses["mse_wav"][2].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_lhh', losses["mse_wav"][3].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hll', losses["mse_wav"][4].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hlh', losses["mse_wav"][5].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hhl', losses["mse_wav"][6].item(),
-                                       global_step=self.step + self.resume_step)
-        self.summary_writer.add_scalar('loss/mse_wav_hhh', losses["mse_wav"][7].item(),
-                                       global_step=self.step + self.resume_step)
+        if self.summary_writer is not None:
+            self.summary_writer.add_scalar('loss/mse_wav_lll', losses["mse_wav"][0].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_llh', losses["mse_wav"][1].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_lhl', losses["mse_wav"][2].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_lhh', losses["mse_wav"][3].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hll', losses["mse_wav"][4].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hlh', losses["mse_wav"][5].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hhl', losses["mse_wav"][6].item(),
+                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/mse_wav_hhh', losses["mse_wav"][7].item(),
+                                           global_step=self.step + self.resume_step)
 
         weights = th.ones(len(losses["mse_wav"])).cuda()  # Equally weight all wavelet channel losses
 
