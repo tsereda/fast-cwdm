@@ -299,9 +299,10 @@ class TrainLoop:
         # MODIFIED: Use Fast-DDPM timestep sampling if enabled
         if self.use_fast_ddpm:
             t_global, weights = self.fast_ddpm_sampler.sample(batch_size, dist_util.dev())
-            # Map global indices to local indices for SpacedDiffusion
+            # Map global indices to local indices for SpacedDiffusion (direct indexing)
             if hasattr(self.diffusion, 'timestep_map'):
-                t = th.from_numpy(np.array([self.diffusion.timestep_map.tolist().index(i.item()) for i in t_global.cpu()])).long().to(t_global.device)
+                t = self.diffusion.timestep_map[t_global]
+                t = t.long().to(t_global.device)
             else:
                 t = t_global
             print(f"[DEBUG] Fast-DDPM t_global: {t_global.tolist()} mapped to local t: {t.tolist()}")
