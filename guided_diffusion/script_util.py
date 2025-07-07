@@ -523,20 +523,25 @@ def create_gaussian_diffusion(
     rescale_learned_sigmas=False,
     timestep_respacing="",
     mode='default',
-    use_fast_ddpm=False,              # NEW
-    fast_ddpm_strategy='non-uniform', # NEW
+    use_fast_ddpm=False,
+    fast_ddpm_strategy='non-uniform',
+    **kwargs
 ):
-    from . import gaussian_diffusion as gd
+    # Remove keys not accepted by SpacedDiffusion/GaussianDiffusion
+    kwargs.pop('use_fast_ddpm', None)
+    kwargs.pop('fast_ddpm_strategy', None)
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
+
     if use_kl:
         loss_type = gd.LossType.RESCALED_KL
     elif rescale_learned_sigmas:
         loss_type = gd.LossType.RESCALED_MSE
     else:
         loss_type = gd.LossType.MSE
+
     if not timestep_respacing:
         timestep_respacing = [steps]
-    from .respace import SpacedDiffusion, space_timesteps
+
     return SpacedDiffusion(
         use_timesteps=space_timesteps(steps, timestep_respacing),
         betas=betas,
@@ -553,8 +558,7 @@ def create_gaussian_diffusion(
         loss_type=loss_type,
         rescale_timesteps=rescale_timesteps,
         mode=mode,
-        use_fast_ddpm=use_fast_ddpm,              # NEW
-        fast_ddpm_strategy=fast_ddpm_strategy,    # NEW
+        **kwargs
     )
 
 

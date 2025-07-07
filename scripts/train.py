@@ -59,10 +59,7 @@ def main():
         print(f"[FAST-DDPM] Training with {getattr(args, 'diffusion_steps', 1000)} timesteps")
     print("Creating model and diffusion...")
     arguments = args_to_dict(args, model_and_diffusion_defaults().keys())
-    # Remove keys not accepted by create_model_and_diffusion (and avoid passing to GaussianDiffusion)
-    for k in ["use_fast_ddpm", "fast_ddpm_strategy"]:
-        if k in arguments:
-            arguments.pop(k)
+    # Do NOT remove use_fast_ddpm and fast_ddpm_strategy here; they are needed by create_model_and_diffusion
     model, diffusion = create_model_and_diffusion(**arguments)
     model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=1000)
