@@ -55,6 +55,8 @@ class TrainLoop:
         summary_writer=None,
         mode='default',
         loss_level='image',
+        use_fast_ddpm=False,          # NEW: Enable Fast-DDPM
+        fast_ddpm_strategy='non-uniform',  # NEW: Fast-DDPM sampling strategy
     ):
         self.summary_writer = summary_writer
         self.mode = mode
@@ -82,33 +84,35 @@ class TrainLoop:
             self.grad_scaler = amp.GradScaler()
         else:
             self.grad_scaler = amp.GradScaler(enabled=False)
-
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
         self.weight_decay = weight_decay
         self.lr_anneal_steps = lr_anneal_steps
-
         self.dwt = DWT_3D('haar')
         self.idwt = IDWT_3D('haar')
-
         self.loss_level = loss_level
-
         self.step = 1
         self.resume_step = resume_step
         self.global_batch = self.batch_size * dist.get_world_size()
-
         self.sync_cuda = th.cuda.is_available()
-
         self._load_and_sync_parameters()
-
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         if self.resume_step:
             print("Resume Step: " + str(self.resume_step))
             self._load_optimizer_state()
-
         if not th.cuda.is_available():
             logger.warn(
                 "Training requires CUDA. "
             )
+        # Fast-DDPM integration
+        self.use_fast_ddpm = use_fast_ddpm
+        self.fast_ddpm_strategy = fast_ddpm_strategy
+        if self.use_fast_ddpm:
+            from .gaussian_diffusion import FastDDPMScheduleSampler
+            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
+                num_timesteps=diffusion.num_timesteps,
+                strategy=fast_ddpm_strategy
+            )
+            print(f"[TRAIN] Using Fast-DDPM with {fast_ddpm_strategy} sampling")
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -288,19 +292,26 @@ class TrainLoop:
             p.grad = None
 
         if self.mode == 'i2i':
-            t, weights = self.schedule_sampler.sample(batch['t1n'].shape[0], dist_util.dev())
+            batch_size = batch['t1n'].shape[0]
         else:
-            t, weights = self.schedule_sampler.sample(batch.shape[0], dist_util.dev())
+            batch_size = batch.shape[0]
+        # MODIFIED: Use Fast-DDPM timestep sampling if enabled
+        if self.use_fast_ddpm:
+            t, weights = self.fast_ddpm_sampler.sample(batch_size, dist_util.dev())
+            print(f"[TRAIN STEP] Fast-DDPM sampled timesteps: {t.cpu().numpy()}")
+        else:
+            t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
 
-        compute_losses = functools.partial(self.diffusion.training_losses,
-                                           self.model,
-                                           x_start=batch,
-                                           t=t,
-                                           model_kwargs=cond,
-                                           labels=label,
-                                           mode=self.mode,
-                                           contr=self.contr
-                                           )
+        compute_losses = functools.partial(
+            self.diffusion.training_losses,
+            self.model,
+            x_start=batch,
+            t=t,
+            model_kwargs=cond,
+            labels=label,
+            mode=self.mode,
+            contr=self.contr
+        )
         losses1 = compute_losses()
 
         if isinstance(self.schedule_sampler, LossAwareSampler):

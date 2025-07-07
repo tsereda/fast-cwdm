@@ -53,23 +53,22 @@ def main():
 
     dist_util.setup_dist(devices=args.devices)
 
-    logger.log("Creating model and diffusion...")
+    # Log Fast-DDPM configuration
+    if getattr(args, 'use_fast_ddpm', False):
+        print(f"[FAST-DDPM] Enabled with {getattr(args, 'fast_ddpm_strategy', 'non-uniform')} strategy")
+        print(f"[FAST-DDPM] Training with {getattr(args, 'diffusion_steps', 1000)} timesteps")
+    print("Creating model and diffusion...")
     arguments = args_to_dict(args, model_and_diffusion_defaults().keys())
     model, diffusion = create_model_and_diffusion(**arguments)
-
-    # logger.log("Number of trainable parameters: {}".format(np.array([np.array(p.shape).prod() for p in model.parameters()]).sum()))
-    model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())  # allow for 2 devices
-    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion,  maxt=1000)
-
+    model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())
+    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=1000)
     if args.dataset == 'brats':
         ds = BRATSVolumes(args.data_dir, mode='train')
-
     datal = th.utils.data.DataLoader(ds,
                                      batch_size=args.batch_size,
                                      num_workers=args.num_workers,
                                      shuffle=True,)
-
-    logger.log("Start training...")
+    print("Start training...")
     TrainLoop(
         model=model,
         diffusion=diffusion,
@@ -90,9 +89,11 @@ def main():
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
         dataset=args.dataset,
-        summary_writer=summary_writer,
+        summary_writer=None,
         mode='i2i',
         contr=args.contr,
+        use_fast_ddpm=args.use_fast_ddpm,              # NEW
+        fast_ddpm_strategy=args.fast_ddpm_strategy,    # NEW
     ).run_loop()
 
 
@@ -115,7 +116,7 @@ def create_argparser():
         fp16_scale_growth=1e-3,
         dataset='brats',
         use_tensorboard=True,
-        tensorboard_path='',  # set path to existing logdir for resuming
+        tensorboard_path='',
         devices=[0],
         dims=3,
         learn_sigma=False,
@@ -130,8 +131,12 @@ def create_argparser():
         additive_skips=False,
         use_freq=False,
         contr='t1n',
+        use_fast_ddpm=False,              # NEW: Enable Fast-DDPM
+        fast_ddpm_strategy='non-uniform', # NEW: Sampling strategy
     )
+    from guided_diffusion.script_util import model_and_diffusion_defaults, add_dict_to_argparser
     defaults.update(model_and_diffusion_defaults())
+    import argparse
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
     return parser
