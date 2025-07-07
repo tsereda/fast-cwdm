@@ -163,6 +163,8 @@ class GaussianDiffusion:
         self.num_timesteps = int(betas.shape[0])
         alphas = 1.0 - betas
         self.alphas_cumprod = np.cumprod(alphas, axis=0)
+        self.alphas_cumprod_prev = np.append(1.0, self.alphas_cumprod[:-1])
+        self.alphas_cumprod_next = np.append(self.alphas_cumprod[1:], 0.0)
         # === DIAGNOSTIC PRINTS (NO FUNCTIONALITY CHANGE) ===
         print(f"\n[DIFFUSION] Initialized with {self.num_timesteps} timesteps")
         print(f"[DIFFUSION] Alpha_cumprod range: {self.alphas_cumprod.min():.6f} → {self.alphas_cumprod.max():.6f}")
