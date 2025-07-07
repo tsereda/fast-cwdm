@@ -297,13 +297,13 @@ class TrainLoop:
             batch_size = batch.shape[0]
 
         # Sample timesteps
-        if self.use_fast_ddpm:
+        if self.use_fast_ddpm or hasattr(self.diffusion, 'timestep_map'):
+            # Always use fast_ddpm_sampler for SpacedDiffusion/Fast-DDPM
             t, weights = self.fast_ddpm_sampler.sample(batch_size, dist_util.dev())
         else:
             t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
-        # Always map global indices to local indices if using SpacedDiffusion/Fast-DDPM
+        # Map global indices to local indices if needed
         if hasattr(self.diffusion, 'timestep_map'):
-            # Robust mapping: if timestep_map is a list/array of global timesteps, map t (global) to local indices
             if isinstance(self.diffusion.timestep_map, (list, np.ndarray)):
                 t_np = t.cpu().numpy() if hasattr(t, 'cpu') else np.array(t)
                 t_local = np.array([self.diffusion.timestep_map.index(ti) for ti in t_np])
