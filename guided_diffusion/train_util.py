@@ -112,7 +112,7 @@ class TrainLoop:
                 num_timesteps=diffusion.num_timesteps,
                 strategy=fast_ddpm_strategy
             )
-            print(f"[TRAIN] Using Fast-DDPM with {fast_ddpm_strategy} sampling")
+            print(f"[TRAIN] Using Fast-DDPM with {fast_dddm_strategy} sampling")
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -303,8 +303,14 @@ class TrainLoop:
             t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
         # Always map global indices to local indices if using SpacedDiffusion/Fast-DDPM
         if hasattr(self.diffusion, 'timestep_map'):
-            t = self.diffusion.timestep_map[t]
-            t = t.long().to(weights.device)
+            # Robust mapping: if timestep_map is a list/array of global timesteps, map t (global) to local indices
+            if isinstance(self.diffusion.timestep_map, (list, np.ndarray)):
+                t_np = t.cpu().numpy() if hasattr(t, 'cpu') else np.array(t)
+                t_local = np.array([self.diffusion.timestep_map.index(ti) for ti in t_np])
+                t = th.from_numpy(t_local).long().to(t.device)
+            else:
+                t = self.diffusion.timestep_map[t]
+                t = t.long().to(weights.device)
         print(f"[DEBUG] Timesteps mapped to local indices: {t.tolist()}")
 
         compute_losses = functools.partial(
