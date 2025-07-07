@@ -96,11 +96,10 @@ class FastDDPMScheduleSampler:
         idx_1 = np.random.randint(0, len(self.timestep_indices), size=(n // 2 + 1,))
         idx_2 = len(self.timestep_indices) - idx_1 - 1
         idx = np.concatenate([idx_1, idx_2], axis=0)[:n]
-        # Return global indices for SpacedDiffusion
-        timesteps = self.timestep_indices[idx]
-        timesteps_tensor = torch.from_numpy(timesteps).long().to(device)
-        weights = torch.ones_like(timesteps_tensor).float()
-        return timesteps_tensor, weights
+        # Return local indices for SpacedDiffusion/Fast-DDPM
+        idx_tensor = torch.from_numpy(idx).long().to(device)
+        weights = torch.ones_like(idx_tensor).float()
+        return idx_tensor, weights
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
     Create a beta schedule that discretizes the given alpha_t_bar function,
