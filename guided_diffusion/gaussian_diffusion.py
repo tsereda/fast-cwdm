@@ -93,11 +93,12 @@ class FastDDPMScheduleSampler:
         import numpy as np
         import torch
         n = batch_size
+        # Sample local indices (0 to num_timesteps-1)
         idx_1 = np.random.randint(0, len(self.timestep_indices), size=(n // 2 + 1,))
         idx_2 = len(self.timestep_indices) - idx_1 - 1
         idx = np.concatenate([idx_1, idx_2], axis=0)[:n]
-        timesteps = self.timestep_indices[idx]
-        timesteps_tensor = torch.from_numpy(timesteps).long().to(device)
+        # Return local indices for use with 10-step arrays
+        timesteps_tensor = torch.from_numpy(idx).long().to(device)
         weights = torch.ones_like(timesteps_tensor).float()
         return timesteps_tensor, weights
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
