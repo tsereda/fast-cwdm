@@ -113,6 +113,14 @@ class TrainLoop:
                 strategy=fast_ddpm_strategy
             )
             print(f"[TRAIN] Using Fast-DDPM with {fast_dddm_strategy} sampling")
+        # Fast-DDPM/SpacedDiffusion integration: always initialize fast_ddpm_sampler if needed
+        if hasattr(self.diffusion, 'timestep_map'):
+            from .gaussian_diffusion import FastDDPMScheduleSampler
+            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
+                num_timesteps=len(self.diffusion.timestep_map),
+                strategy=self.fast_ddpm_strategy
+            )
+            print(f"[TRAIN] Using Fast-DDPM/SpacedDiffusion with {self.fast_ddpm_strategy} sampling")
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
