@@ -111,9 +111,9 @@ spec:
           
           conda info --envs
           python --version
-          
+
+          LOGDIR="$/data/runs"
           if [ "$USE_TENSORBOARD" = "true" ]; then
-            LOGDIR="${REPO_PATH}/runs"
             echo "Launching TensorBoard on port 6006, logdir: $LOGDIR"
             tensorboard --logdir "$LOGDIR" --host 0.0.0.0 --port 6006 &
             echo "To access TensorBoard, run:"
