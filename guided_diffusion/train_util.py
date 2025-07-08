@@ -401,17 +401,20 @@ class TrainLoop:
                 else:
                     raise ValueError(f'dataset {self.dataset} not implemented')
 
-                with bf.BlobFile(bf.join(get_blob_logdir(), 'checkpoints', filename), "wb") as f:
+                full_save_path = bf.join(get_blob_logdir(), 'checkpoints', filename)
+                print(f"Saving model to: {full_save_path}")
+
+                with bf.BlobFile(full_save_path, "wb") as f:
                     th.save(state_dict, f)
 
         save_checkpoint(0, self.model.state_dict())
 
         if dist.get_rank() == 0:
             checkpoint_dir = os.path.join(logger.get_dir(), 'checkpoints')
-            with bf.BlobFile(
-                bf.join(checkpoint_dir, f"opt{(self.step+self.resume_step):06d}.pt"),
-                "wb",
-            ) as f:
+            opt_save_path = bf.join(checkpoint_dir, f"opt{(self.step+self.resume_step):06d}.pt")
+            print(f"Saving optimizer to: {opt_save_path}")
+            
+            with bf.BlobFile(opt_save_path, "wb") as f:
                 th.save(self.opt.state_dict(), f)
 
 
