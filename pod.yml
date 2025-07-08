@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: cwdm-brats
+  name: fast-cwdm
   labels:
-    app: cwdm-brats
+    app: fast-cwdm
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west

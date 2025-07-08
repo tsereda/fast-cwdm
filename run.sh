@@ -60,7 +60,7 @@ elif [[ $MODE == 'auto' ]]; then
 fi
 
 COMMON="
---lr_anneal_steps=100 #debugging
+--lr_anneal_steps=100
 --dataset=${DATASET}
 --num_channels=${CHANNELS}
 --class_cond=False
