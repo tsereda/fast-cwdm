@@ -389,8 +389,7 @@ class TrainLoop:
     def save(self):
         def save_checkpoint(rate, state_dict):
             if dist.get_rank() == 0:
-                full_save_path = bf.join(get_blob_logdir(), 'checkpoints', filename)
-                logger.log("Saving model to: {full_save_path}")
+                logger.log("Saving model...")
                 if self.dataset == 'brats':
                     filename = f"brats_{(self.step+self.resume_step):06d}.pt"
                 elif self.dataset == 'lidc-idri':
@@ -401,6 +400,10 @@ class TrainLoop:
                     filename = f"synthrad_{(self.step + self.resume_step):06d}.pt"
                 else:
                     raise ValueError(f'dataset {self.dataset} not implemented')
+
+                full_save_path = bf.join(get_blob_logdir(), 'checkpoints', filename)
+                logger.log(f"Saving model to: {full_save_path}")
+                print(f"Saving model to: {full_save_path}")
 
                 with bf.BlobFile(full_save_path, "wb") as f:
                     th.save(state_dict, f)
