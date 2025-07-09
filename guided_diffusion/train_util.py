@@ -112,7 +112,7 @@ class TrainLoop:
                 num_timesteps=diffusion.num_timesteps,
                 strategy=fast_ddpm_strategy
             )
-            print(f"[TRAIN] Using Fast-DDPM with {fast_dddm_strategy} sampling")
+            print(f"[TRAIN] Using Fast-DDPM with {fast_ddpm_strategy} sampling")
         # Fast-DDPM/SpacedDiffusion integration: always initialize fast_ddpm_sampler if needed
         if hasattr(self.diffusion, 'timestep_map'):
             from .gaussian_diffusion import FastDDPMScheduleSampler
@@ -276,14 +276,14 @@ class TrainLoop:
             self.grad_scaler.unscale_(self.opt)  # check self.grad_scaler._per_optimizer_states
 
         # compute norms
-        with torch.no_grad():
+        with th.no_grad():
             param_max_norm = max([p.abs().max().item() for p in self.model.parameters()])
             grad_max_norm = max([p.grad.abs().max().item() for p in self.model.parameters()])
             info['norm/param_max'] = param_max_norm
             info['norm/grad_max'] = grad_max_norm
 
-        if not torch.isfinite(lossmse): #infinite
-            if not torch.isfinite(torch.tensor(param_max_norm)):
+        if not th.isfinite(lossmse): #infinite
+            if not th.isfinite(th.tensor(param_max_norm)):
                 logger.log(f"Model parameters contain non-finite value {param_max_norm}, entering breakpoint", level=logger.ERROR)
                 breakpoint()
             else:
@@ -365,7 +365,7 @@ class TrainLoop:
         log_loss_dict(self.diffusion, t, {k: v * weights for k, v in losses.items()})
 
         # perform some finiteness checks
-        if not torch.isfinite(loss):
+        if not th.isfinite(loss):
             logger.log(f"Encountered non-finite loss {loss}")
         if self.use_fp16:
             self.grad_scaler.scale(loss).backward()
@@ -401,17 +401,26 @@ class TrainLoop:
                 else:
                     raise ValueError(f'dataset {self.dataset} not implemented')
 
-                with bf.BlobFile(bf.join(get_blob_logdir(), 'checkpoints', filename), "wb") as f:
+                # Create checkpoints directory in /data/
+                checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
+                os.makedirs(checkpoint_dir, exist_ok=True)
+                
+                full_save_path = os.path.join(checkpoint_dir, filename)
+                logger.log(f"Saving model to: {full_save_path}")
+                print(f"Saving model to: {full_save_path}")
+
+                with bf.BlobFile(full_save_path, "wb") as f:
                     th.save(state_dict, f)
 
         save_checkpoint(0, self.model.state_dict())
 
         if dist.get_rank() == 0:
-            checkpoint_dir = os.path.join(logger.get_dir(), 'checkpoints')
-            with bf.BlobFile(
-                bf.join(checkpoint_dir, f"opt{(self.step+self.resume_step):06d}.pt"),
-                "wb",
-            ) as f:
+            checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            opt_save_path = os.path.join(checkpoint_dir, f"opt{(self.step+self.resume_step):06d}.pt")
+            print(f"Saving optimizer to: {opt_save_path}")
+            
+            with bf.BlobFile(opt_save_path, "wb") as f:
                 th.save(self.opt.state_dict(), f)
 
 
@@ -439,9 +448,11 @@ def parse_resume_step_from_filename(filename):
 
 
 def get_blob_logdir():
-    # You can change this to be a separate path to save checkpoints to
-    # a blobstore or some external drive.
-    return logger.get_dir()
+    """
+    Modified to save checkpoints to /data/ directory where persistent volume is mounted
+    """
+    # Save to /data/ directory instead of logger.get_dir()
+    return "/data"
 
 
 def find_resume_checkpoint():

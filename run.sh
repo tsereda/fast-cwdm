@@ -60,6 +60,7 @@ elif [[ $MODE == 'auto' ]]; then
 fi
 
 COMMON="
+--lr_anneal_steps=100
 --dataset=${DATASET}
 --num_channels=${CHANNELS}
 --class_cond=False
@@ -105,9 +106,9 @@ SAMPLE="
 --seed=${SEED}
 --image_size=${IMAGE_SIZE}
 --use_fp16=False
---model_path=${RUN_DIR}/checkpoints/${DATASET}_${ITERATIONS}000.pt
+--model_path=/data/checkpoints/${DATASET}_${ITERATIONS}000.pt
 --devices=${GPU}
---output_dir=./results/${DATASET}_${MODEL}_${ITERATIONS}000/
+--output_dir=/data/results/${DATASET}_${MODEL}_${ITERATIONS}000/
 --num_samples=1000
 --use_ddim=False
 --sampling_steps=${SAMPLING_STEPS}
