@@ -120,9 +120,8 @@ spec:
             echo "kubectl port-forward pod/cwdm-brats 6006:6006"
           fi
           
-          mkdir /data/results/
           bash run.sh
-          ls -la /data/results/
+          ls -la /data/checkpoints/
 
           tail -f /dev/null
      
