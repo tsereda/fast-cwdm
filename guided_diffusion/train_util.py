@@ -55,8 +55,7 @@ class TrainLoop:
         summary_writer=None,
         mode='default',
         loss_level='image',
-        use_fast_ddpm=False,          # NEW: Enable Fast-DDPM
-        fast_ddpm_strategy='non-uniform',  # NEW: Fast-DDPM sampling strategy
+        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
     ):
         self.summary_writer = summary_writer
         self.mode = mode
@@ -67,6 +66,7 @@ class TrainLoop:
         self.iterdatal = iter(data)
         self.batch_size = batch_size
         self.in_channels = in_channels
+        # No fast_ddpm_sampler or use_fast_ddpm attributes needed; rely on sample_schedule and diffusion_steps
         self.image_size = image_size
         self.contr = contr
         self.microbatch = microbatch if microbatch > 0 else batch_size
@@ -103,24 +103,7 @@ class TrainLoop:
             logger.warn(
                 "Training requires CUDA. "
             )
-        # Fast-DDPM integration
-        self.use_fast_ddpm = use_fast_ddpm
-        self.fast_ddpm_strategy = fast_ddpm_strategy
-        if self.use_fast_ddpm:
-            from .gaussian_diffusion import FastDDPMScheduleSampler
-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
-                num_timesteps=diffusion.num_timesteps,
-                strategy=fast_ddpm_strategy
-            )
-            print(f"[TRAIN] Using Fast-DDPM with {fast_ddpm_strategy} sampling")
-        # Fast-DDPM/SpacedDiffusion integration: always initialize fast_ddpm_sampler if needed
-        if hasattr(self.diffusion, 'timestep_map'):
-            from .gaussian_diffusion import FastDDPMScheduleSampler
-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
-                num_timesteps=len(self.diffusion.timestep_map),
-                strategy=self.fast_ddpm_strategy
-            )
-            print(f"[TRAIN] Using Fast-DDPM/SpacedDiffusion with {self.fast_ddpm_strategy} sampling")
+        # Fast-DDPM logic removed; now handled by sample_schedule and beta schedule
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -155,10 +138,17 @@ class TrainLoop:
 
     def run_loop(self):
         import time
+        total_data_time = 0.0
+        total_step_time = 0.0
+        total_log_time = 0.0
+        total_save_time = 0.0
+        start_time = time.time()
         t = time.time()
         while not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps:
             t_total = time.time() - t
             t = time.time()
+            # --- Data loading ---
+            data_load_start = time.time()
             if self.dataset in ['brats']:
                 try:
                     batch = next(self.iterdatal)
@@ -167,7 +157,10 @@ class TrainLoop:
                     self.iterdatal = iter(self.datal)
                     batch = next(self.iterdatal)
                     cond = {}
+            data_load_end = time.time()
+            total_data_time += data_load_end - data_load_start
 
+            # --- Move to device ---
             if self.mode=='i2i':
                 batch['t1n'] = batch['t1n'].to(dist_util.dev())
                 batch['t1c'] = batch['t1c'].to(dist_util.dev())
@@ -176,26 +169,25 @@ class TrainLoop:
             else:
                 batch = batch.to(dist_util.dev())
 
-            t_fwd = time.time()
-            t_load = t_fwd-t
-
+            # --- Model forward/backward ---
+            step_proc_start = time.time()
             lossmse, sample, sample_idwt = self.run_step(batch, cond)
-
-            t_fwd = time.time()-t_fwd
+            step_proc_end = time.time()
+            total_step_time += step_proc_end - step_proc_start
 
             names = ["LLL", "LLH", "LHL", "LHH", "HLL", "HLH", "HHL", "HHH"]
 
-            # TensorBoard logging
+            # --- Logging ---
+            log_start = time.time()
             if self.summary_writer is not None:
-                self.summary_writer.add_scalar('time/load', t_load, global_step=self.step + self.resume_step)
-                self.summary_writer.add_scalar('time/forward', t_fwd, global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('time/load', total_data_time, global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('time/forward', total_step_time, global_step=self.step + self.resume_step)
                 self.summary_writer.add_scalar('time/total', t_total, global_step=self.step + self.resume_step)
                 self.summary_writer.add_scalar('loss/MSE', lossmse.item(), global_step=self.step + self.resume_step)
 
-            # wandb logging
             wandb_log_dict = {
-                'time/load': t_load,
-                'time/forward': t_fwd,
+                'time/load': total_data_time,
+                'time/forward': total_step_time,
                 'time/total': t_total,
                 'loss/MSE': lossmse.item(),
                 'step': self.step + self.resume_step
@@ -207,7 +199,6 @@ class TrainLoop:
                 if self.summary_writer is not None:
                     self.summary_writer.add_image('sample/x_0', midplane.unsqueeze(0),
                                                   global_step=self.step + self.resume_step)
-                # wandb image logging
                 img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                 wandb_log_dict['sample/x_0'] = wandb.Image(img, caption='sample/x_0')
 
@@ -252,18 +243,32 @@ class TrainLoop:
                         img = (visualize(midplane.detach().cpu().numpy()) * 255).astype('uint8')
                         wandb_log_dict['source/t2f'] = wandb.Image(img, caption='source/t2f')
 
-            # Actually log to wandb
             wandb.log(wandb_log_dict, step=self.step + self.resume_step)
+            log_end = time.time()
+            total_log_time += log_end - log_start
 
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
 
+            # --- Saving ---
             if self.step % self.save_interval == 0:
+                save_start = time.time()
                 self.save()
-                # Run for a finite amount of time in integration tests.
+                save_end = time.time()
+                total_save_time += save_end - save_start
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
                     return
             self.step += 1
+
+            # Print profiling info every log_interval
+            if self.step % self.log_interval == 0:
+                elapsed = time.time() - start_time
+                print(f"[PROFILE] Step {self.step}: Data {total_data_time:.2f}s, Step {total_step_time:.2f}s, Log {total_log_time:.2f}s, Save {total_save_time:.2f}s, Total {elapsed:.2f}s")
+                # Reset counters for next interval
+                total_data_time = 0.0
+                total_step_time = 0.0
+                total_log_time = 0.0
+                total_save_time = 0.0
 
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
@@ -311,12 +316,9 @@ class TrainLoop:
             batch_size = batch.shape[0]
 
         # Sample timesteps
-        if self.use_fast_ddpm or hasattr(self.diffusion, 'timestep_map'):
-            t, weights = self.fast_ddpm_sampler.sample(batch_size, dist_util.dev())
-            t = t.long().to(weights.device)  # Always use as local index
-        else:
-            t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
-        print(f"[DEBUG] Timesteps (local indices): {t.tolist()}")
+        t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
+        # If your diffusion object has a custom timestep_map, handle it inside schedule_sampler or diffusion
+        #print(f"[DEBUG] Timesteps (local indices): {t.tolist()}")
 
         compute_losses = functools.partial(
             self.diffusion.training_losses,

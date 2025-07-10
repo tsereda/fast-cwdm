@@ -27,7 +27,7 @@ dwt = DWT_3D('haar')
 idwt = IDWT_3D('haar')
 
 
-def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
+def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, sample_schedule="direct"):
     """
     Get a pre-defined beta schedule for the given name.
 
@@ -36,35 +36,28 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     import numpy as np
     import math
     if schedule_name == "linear":
-        if num_diffusion_timesteps == 1000:
-            # Original working schedule for 1000 steps
-            scale = 1000 / num_diffusion_timesteps  # scale = 1.0
-            beta_start = scale * 0.0001  # = 0.0001
-            beta_end = scale * 0.02      # = 0.02
-            print(f"[BETA SCHEDULE] Using original 1000-step schedule")
-            print(f"[BETA SCHEDULE] Beta range: {beta_start:.6f} → {beta_end:.6f}")
+        if sample_schedule == "direct":
+            scale = 1000 / num_diffusion_timesteps
+            beta_start = scale * 0.0001
+            beta_end = scale * 0.02
+            print(f"[BETA SCHEDULE] [direct] {num_diffusion_timesteps} steps, Beta range: {beta_start:.6f} → {beta_end:.6f}")
             return np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
-        else:
-            # Fast-DDPM approach: Sample from proven 1000-step alpha_cumprod curve
-            print(f"[BETA SCHEDULE] Using Fast-DDPM approach for {num_diffusion_timesteps} steps")
+        elif sample_schedule == "sampled":
+            print(f"[BETA SCHEDULE] [sampled] Sampling {num_diffusion_timesteps} steps from 1000-step curve")
             full_betas = np.linspace(0.0001, 0.02, 1000, dtype=np.float64)
             full_alphas = 1.0 - full_betas
             full_alphas_cumprod = np.cumprod(full_alphas, axis=0)
-            # Strategic sampling: non-uniform for 10, uniform otherwise
-            if num_diffusion_timesteps == 10:
-                indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
-                print(f"[BETA SCHEDULE] Using non-uniform sampling: {indices}")
-            else:
-                indices = np.linspace(0, 999, num_diffusion_timesteps, dtype=int)
-                print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
+            indices = np.linspace(0, 999, num_diffusion_timesteps, dtype=int)
+            print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
             sampled_alphas_cumprod = full_alphas_cumprod[indices]
             alphas_cumprod_prev = np.concatenate([[1.0], sampled_alphas_cumprod[:-1]])
             alphas = sampled_alphas_cumprod / alphas_cumprod_prev
             betas = 1.0 - alphas
             betas = np.clip(betas, 0.0001, 0.999)
-            print(f"[BETA SCHEDULE] ✅ Fast-DDPM betas range: {betas.min():.6f} → {betas.max():.6f}")
-            print(f"[BETA SCHEDULE] Alpha_cumprod range: {sampled_alphas_cumprod.min():.6f} → {sampled_alphas_cumprod.max():.6f}")
+            print(f"[BETA SCHEDULE] ✅ Sampled betas range: {betas.min():.6f} → {betas.max():.6f}")
             return betas
+        else:
+            raise NotImplementedError(f"Unknown sample_schedule: {sample_schedule}")
     elif schedule_name == "cosine":
         return betas_for_alpha_bar(
             num_diffusion_timesteps,
@@ -73,33 +66,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     else:
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
-# Fast-DDPM timestep sampler
-class FastDDPMScheduleSampler:
-    """
-    Fast-DDPM timestep sampler that uses strategic sampling from fewer timesteps
-    """
-    def __init__(self, num_timesteps=10, strategy='non-uniform'):
-        import numpy as np
-        self.num_timesteps = num_timesteps
-        self.strategy = strategy
-        if strategy == 'non-uniform' and num_timesteps == 10:
-            self.timestep_indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
-        elif strategy == 'uniform':
-            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
-        else:
-            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
-        print(f"[FAST-DDPM] Using {strategy} sampling with indices: {self.timestep_indices}")
-    def sample(self, batch_size, device):
-        import numpy as np
-        import torch
-        n = batch_size
-        idx_1 = np.random.randint(0, len(self.timestep_indices), size=(n // 2 + 1,))
-        idx_2 = len(self.timestep_indices) - idx_1 - 1
-        idx = np.concatenate([idx_1, idx_2], axis=0)[:n]
-        # Return local indices for SpacedDiffusion/Fast-DDPM
-        idx_tensor = torch.from_numpy(idx).long().to(device)
-        weights = torch.ones_like(idx_tensor).float()
-        return idx_tensor, weights
+
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
     Create a beta schedule that discretizes the given alpha_t_bar function,

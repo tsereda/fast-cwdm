@@ -53,16 +53,14 @@ def main():
 
     dist_util.setup_dist(devices=args.devices)
 
-    # Log Fast-DDPM configuration
-    if getattr(args, 'use_fast_ddpm', False):
-        print(f"[FAST-DDPM] Enabled with {getattr(args, 'fast_ddpm_strategy', 'non-uniform')} strategy")
-        print(f"[FAST-DDPM] Training with {getattr(args, 'diffusion_steps', 1000)} timesteps")
+    # Log sample schedule configuration
+    print(f"[SCHEDULE] sample_schedule: {getattr(args, 'sample_schedule', 'direct')}")
+    print(f"[SCHEDULE] diffusion_steps: {getattr(args, 'diffusion_steps', 1000)}")
     print("Creating model and diffusion...")
     arguments = args_to_dict(args, model_and_diffusion_defaults().keys())
-    # Do NOT remove use_fast_ddpm and fast_ddpm_strategy here; they are needed by create_model_and_diffusion
     model, diffusion = create_model_and_diffusion(**arguments)
     model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())
-    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=1000)
+    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=diffusion.num_timesteps)
     if args.dataset == 'brats':
         ds = BRATSVolumes(args.data_dir, mode='train')
     datal = th.utils.data.DataLoader(ds,
@@ -93,8 +91,7 @@ def main():
         summary_writer=None,
         mode='i2i',
         contr=args.contr,
-        use_fast_ddpm=args.use_fast_ddpm,              # NEW
-        fast_ddpm_strategy=args.fast_ddpm_strategy,    # NEW
+        sample_schedule=args.sample_schedule,
     ).run_loop()
 
 
@@ -132,8 +129,7 @@ def create_argparser():
         additive_skips=False,
         use_freq=False,
         contr='t1n',
-        use_fast_ddpm=False,              # NEW: Enable Fast-DDPM
-        fast_ddpm_strategy='non-uniform', # NEW: Sampling strategy
+        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
     )
     from guided_diffusion.script_util import model_and_diffusion_defaults, add_dict_to_argparser
     defaults.update(model_and_diffusion_defaults())

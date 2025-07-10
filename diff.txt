@@ -1,0 +1,586 @@
+diff --git a/.gitignore b/.gitignore
+index bd635c5..559ba9f 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -162,4 +162,5 @@ cython_debug/
+ #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+ #  and can be added to the global gitignore or merged into this file.  For a more nuclear
+ #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+-.idea/
+\ No newline at end of file
++.idea/
++guided_diffusion/script_util.py
+diff --git a/diff.txt b/diff.txt
+new file mode 100644
+index 0000000..d764849
+--- /dev/null
++++ b/diff.txt
+@@ -0,0 +1,277 @@
++diff --git a/guided_diffusion/gaussian_diffusion.py b/guided_diffusion/gaussian_diffusion.py
++index 08de0e7..af89f21 100644
++--- a/guided_diffusion/gaussian_diffusion.py
+++++ b/guided_diffusion/gaussian_diffusion.py
++@@ -36,26 +36,26 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
++     import numpy as np
++     import math
++     if schedule_name == "linear":
++-        if num_diffusion_timesteps == 1000:
++-            # Original working schedule for 1000 steps
++-            scale = 1000 / num_diffusion_timesteps  # scale = 1.0
++-            beta_start = scale * 0.0001  # = 0.0001
++-            beta_end = scale * 0.02      # = 0.02
++-            print(f"[BETA SCHEDULE] Using original 1000-step schedule")
++-            print(f"[BETA SCHEDULE] Beta range: {beta_start:.6f} → {beta_end:.6f}")
++-            return np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
++-        else:
++-            # Fast-DDPM approach: Sample from proven 1000-step alpha_cumprod curve
++-            print(f"[BETA SCHEDULE] Using Fast-DDPM approach for {num_diffusion_timesteps} steps")
+++        # New logic: always use sample_schedule and timesteps
+++        from guided_diffusion.script_util import get_sample_schedule_args
+++        sample_schedule, num_timesteps = get_sample_schedule_args()
+++        if sample_schedule == "direct":
+++            # Standard linear schedule
+++            scale = 1000 / num_timesteps
+++            beta_start = scale * 0.0001
+++            beta_end = scale * 0.02
+++            print(f"[BETA SCHEDULE] [direct] Beta range: {beta_start:.6f} → {beta_end:.6f}")
+++            return np.linspace(beta_start, beta_end, num_timesteps, dtype=np.float64)
+++        elif sample_schedule == "sampled":
+++            print(f"[BETA SCHEDULE] [sampled] Using Fast-DDPM approach for {num_timesteps} steps")
++             full_betas = np.linspace(0.0001, 0.02, 1000, dtype=np.float64)
++             full_alphas = 1.0 - full_betas
++             full_alphas_cumprod = np.cumprod(full_alphas, axis=0)
++-            # Strategic sampling: non-uniform for 10, uniform otherwise
++-            if num_diffusion_timesteps == 10:
+++            if num_timesteps == 10:
++                 indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
++                 print(f"[BETA SCHEDULE] Using non-uniform sampling: {indices}")
++             else:
++-                indices = np.linspace(0, 999, num_diffusion_timesteps, dtype=int)
+++                indices = np.linspace(0, 999, num_timesteps, dtype=int)
++                 print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
++             sampled_alphas_cumprod = full_alphas_cumprod[indices]
++             alphas_cumprod_prev = np.concatenate([[1.0], sampled_alphas_cumprod[:-1]])
++@@ -65,6 +65,8 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
++             print(f"[BETA SCHEDULE] ✅ Fast-DDPM betas range: {betas.min():.6f} → {betas.max():.6f}")
++             print(f"[BETA SCHEDULE] Alpha_cumprod range: {sampled_alphas_cumprod.min():.6f} → {sampled_alphas_cumprod.max():.6f}")
++             return betas
+++        else:
+++            raise NotImplementedError(f"Unknown sample_schedule: {sample_schedule}")
++     elif schedule_name == "cosine":
++         return betas_for_alpha_bar(
++             num_diffusion_timesteps,
++@@ -73,33 +75,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
++     else:
++         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
++ 
++-# Fast-DDPM timestep sampler
++-class FastDDPMScheduleSampler:
++-    """
++-    Fast-DDPM timestep sampler that uses strategic sampling from fewer timesteps
++-    """
++-    def __init__(self, num_timesteps=10, strategy='non-uniform'):
++-        import numpy as np
++-        self.num_timesteps = num_timesteps
++-        self.strategy = strategy
++-        if strategy == 'non-uniform' and num_timesteps == 10:
++-            self.timestep_indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
++-        elif strategy == 'uniform':
++-            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
++-        else:
++-            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
++-        print(f"[FAST-DDPM] Using {strategy} sampling with indices: {self.timestep_indices}")
++-    def sample(self, batch_size, device):
++-        import numpy as np
++-        import torch
++-        n = batch_size
++-        idx_1 = np.random.randint(0, len(self.timestep_indices), size=(n // 2 + 1,))
++-        idx_2 = len(self.timestep_indices) - idx_1 - 1
++-        idx = np.concatenate([idx_1, idx_2], axis=0)[:n]
++-        # Return local indices for SpacedDiffusion/Fast-DDPM
++-        idx_tensor = torch.from_numpy(idx).long().to(device)
++-        weights = torch.ones_like(idx_tensor).float()
++-        return idx_tensor, weights
+++
++ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
++     """
++     Create a beta schedule that discretizes the given alpha_t_bar function,
++diff --git a/guided_diffusion/script_util.py b/guided_diffusion/script_util.py
++index c0a5825..7c3dcb9 100644
++--- a/guided_diffusion/script_util.py
+++++ b/guided_diffusion/script_util.py
++@@ -1,3 +1,21 @@
+++def get_sample_schedule_args():
+++    """
+++    Helper to retrieve sample_schedule and diffusion_steps from global argparse args.
+++    This is a workaround to allow get_named_beta_schedule to access CLI args.
+++    """
+++    import sys
+++    sample_schedule = 'direct'
+++    num_timesteps = 1000
+++    for i, arg in enumerate(sys.argv):
+++        if arg.startswith('--sample_schedule='):
+++            sample_schedule = arg.split('=')[1]
+++        elif arg == '--sample_schedule' and i+1 < len(sys.argv):
+++            sample_schedule = sys.argv[i+1]
+++        if arg.startswith('--diffusion_steps='):
+++            num_timesteps = int(arg.split('=')[1])
+++        elif arg == '--diffusion_steps' and i+1 < len(sys.argv):
+++            num_timesteps = int(sys.argv[i+1])
+++    return sample_schedule, num_timesteps
++ import argparse
++ import inspect
++ 
++@@ -80,8 +98,8 @@ def model_and_diffusion_defaults():
++         mode='default',
++         use_freq=False,
++         predict_xstart=False,
++-        use_fast_ddpm=False,              # NEW
++-        fast_ddpm_strategy='non-uniform', # NEW
+++        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
+++        # use_fast_ddpm and fast_ddpm_strategy are deprecated
++     )
++     res.update(diffusion_defaults())
++     return res
++@@ -127,8 +145,7 @@ def create_model_and_diffusion(
++     mode,
++     use_freq,
++     dataset,
++-    use_fast_ddpm=False,              # NEW
++-    fast_ddpm_strategy='non-uniform', # NEW
+++    sample_schedule='direct',         # NEW
++ ):
++     model = create_model(
++         image_size,
++@@ -166,8 +183,7 @@ def create_model_and_diffusion(
++         rescale_learned_sigmas=rescale_learned_sigmas,
++         timestep_respacing=timestep_respacing,
++         mode=mode,
++-        use_fast_ddpm=use_fast_ddpm,              # NEW
++-        fast_ddpm_strategy=fast_ddpm_strategy,    # NEW
+++        sample_schedule=sample_schedule,
++     )
++     return model, diffusion
++ 
++@@ -523,8 +539,7 @@ def create_gaussian_diffusion(
++     rescale_learned_sigmas=False,
++     timestep_respacing="",
++     mode='default',
++-    use_fast_ddpm=False,
++-    fast_ddpm_strategy='non-uniform',
+++    sample_schedule='direct',
++     **kwargs
++ ):
++     # Remove keys not accepted by SpacedDiffusion/GaussianDiffusion
++diff --git a/guided_diffusion/train_util.py b/guided_diffusion/train_util.py
++index f97f978..49ae0f8 100644
++--- a/guided_diffusion/train_util.py
+++++ b/guided_diffusion/train_util.py
++@@ -55,8 +55,7 @@ class TrainLoop:
++         summary_writer=None,
++         mode='default',
++         loss_level='image',
++-        use_fast_ddpm=False,          # NEW: Enable Fast-DDPM
++-        fast_ddpm_strategy='non-uniform',  # NEW: Fast-DDPM sampling strategy
+++        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
++     ):
++         self.summary_writer = summary_writer
++         self.mode = mode
++@@ -103,24 +102,7 @@ class TrainLoop:
++             logger.warn(
++                 "Training requires CUDA. "
++             )
++-        # Fast-DDPM integration
++-        self.use_fast_ddpm = use_fast_ddpm
++-        self.fast_ddpm_strategy = fast_ddpm_strategy
++-        if self.use_fast_ddpm:
++-            from .gaussian_diffusion import FastDDPMScheduleSampler
++-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
++-                num_timesteps=diffusion.num_timesteps,
++-                strategy=fast_ddpm_strategy
++-            )
++-            print(f"[TRAIN] Using Fast-DDPM with {fast_ddpm_strategy} sampling")
++-        # Fast-DDPM/SpacedDiffusion integration: always initialize fast_ddpm_sampler if needed
++-        if hasattr(self.diffusion, 'timestep_map'):
++-            from .gaussian_diffusion import FastDDPMScheduleSampler
++-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
++-                num_timesteps=len(self.diffusion.timestep_map),
++-                strategy=self.fast_ddpm_strategy
++-            )
++-            print(f"[TRAIN] Using Fast-DDPM/SpacedDiffusion with {self.fast_ddpm_strategy} sampling")
+++        # Fast-DDPM logic removed; now handled by sample_schedule and beta schedule
++ 
++     def _load_and_sync_parameters(self):
++         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
++diff --git a/run.sh b/run.sh
++index 2bf3f06..b913369 100755
++--- a/run.sh
+++++ b/run.sh
++@@ -12,6 +12,7 @@ ITERATIONS=1200;          # training iteration (as a multiple of 1k) checkpoint
++ SAMPLING_STEPS=0;         # number of steps for accelerated sampling, 0 for the default 1000
++ RUN_DIR="";               # tensorboard dir to be set for the evaluation (displayed at start of training)
++ 
+++
++ # detailed settings (no need to change for reproducing)
++ if [[ $MODEL == 'unet' ]]; then
++   echo "MODEL: WDM (U-Net)";
++@@ -21,6 +22,9 @@ if [[ $MODEL == 'unet' ]]; then
++   IMAGE_SIZE=224;
++   IN_CHANNELS=32;           # Change to work with different number of conditioning images 8 + 8x (with x number of conditioning images)
++   NOISE_SCHED='linear';
+++  # Set sample schedule and steps explicitly
+++  SAMPLE_SCHEDULE=${SAMPLE_SCHEDULE:-direct}   # direct or sampled
+++  DIFFUSION_STEPS=${DIFFUSION_STEPS:-1000}
++ else
++   echo "MODEL TYPE NOT FOUND -> Check the supported configurations again";
++ fi
++@@ -59,6 +63,7 @@ elif [[ $MODE == 'auto' ]]; then
++   fi
++ fi
++ 
+++
++ COMMON="
++ --lr_anneal_steps=100
++ --dataset=${DATASET}
++@@ -70,7 +75,8 @@ COMMON="
++ --use_scale_shift_norm=False
++ --attention_resolutions=
++ --channel_mult=${CHANNEL_MULT}
++---diffusion_steps=10
+++--diffusion_steps=${DIFFUSION_STEPS}
+++--sample_schedule=${SAMPLE_SCHEDULE}
++ --noise_schedule=${NOISE_SCHED}
++ --rescale_learned_sigmas=False
++ --rescale_timesteps=False
++diff --git a/scripts/train.py b/scripts/train.py
++index 14fa803..32a8dfb 100644
++--- a/scripts/train.py
+++++ b/scripts/train.py
++@@ -53,13 +53,11 @@ def main():
++ 
++     dist_util.setup_dist(devices=args.devices)
++ 
++-    # Log Fast-DDPM configuration
++-    if getattr(args, 'use_fast_ddpm', False):
++-        print(f"[FAST-DDPM] Enabled with {getattr(args, 'fast_ddpm_strategy', 'non-uniform')} strategy")
++-        print(f"[FAST-DDPM] Training with {getattr(args, 'diffusion_steps', 1000)} timesteps")
+++    # Log sample schedule configuration
+++    print(f"[SCHEDULE] sample_schedule: {getattr(args, 'sample_schedule', 'direct')}")
+++    print(f"[SCHEDULE] diffusion_steps: {getattr(args, 'diffusion_steps', 1000)}")
++     print("Creating model and diffusion...")
++     arguments = args_to_dict(args, model_and_diffusion_defaults().keys())
++-    # Do NOT remove use_fast_ddpm and fast_ddpm_strategy here; they are needed by create_model_and_diffusion
++     model, diffusion = create_model_and_diffusion(**arguments)
++     model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())
++     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=1000)
++@@ -93,8 +91,7 @@ def main():
++         summary_writer=None,
++         mode='i2i',
++         contr=args.contr,
++-        use_fast_ddpm=args.use_fast_ddpm,              # NEW
++-        fast_ddpm_strategy=args.fast_ddpm_strategy,    # NEW
+++        sample_schedule=args.sample_schedule,
++     ).run_loop()
++ 
++ 
++@@ -132,8 +129,7 @@ def create_argparser():
++         additive_skips=False,
++         use_freq=False,
++         contr='t1n',
++-        use_fast_ddpm=False,              # NEW: Enable Fast-DDPM
++-        fast_ddpm_strategy='non-uniform', # NEW: Sampling strategy
+++        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
++     )
++     from guided_diffusion.script_util import model_and_diffusion_defaults, add_dict_to_argparser
++     defaults.update(model_and_diffusion_defaults())
+diff --git a/guided_diffusion/gaussian_diffusion.py b/guided_diffusion/gaussian_diffusion.py
+index 08de0e7..a77116c 100644
+--- a/guided_diffusion/gaussian_diffusion.py
++++ b/guided_diffusion/gaussian_diffusion.py
+@@ -27,7 +27,7 @@ dwt = DWT_3D('haar')
+ idwt = IDWT_3D('haar')
+ 
+ 
+-def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
++def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, sample_schedule="direct"):
+     """
+     Get a pre-defined beta schedule for the given name.
+ 
+@@ -36,35 +36,28 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
+     import numpy as np
+     import math
+     if schedule_name == "linear":
+-        if num_diffusion_timesteps == 1000:
+-            # Original working schedule for 1000 steps
+-            scale = 1000 / num_diffusion_timesteps  # scale = 1.0
+-            beta_start = scale * 0.0001  # = 0.0001
+-            beta_end = scale * 0.02      # = 0.02
+-            print(f"[BETA SCHEDULE] Using original 1000-step schedule")
+-            print(f"[BETA SCHEDULE] Beta range: {beta_start:.6f} → {beta_end:.6f}")
++        if sample_schedule == "direct":
++            scale = 1000 / num_diffusion_timesteps
++            beta_start = scale * 0.0001
++            beta_end = scale * 0.02
++            print(f"[BETA SCHEDULE] [direct] {num_diffusion_timesteps} steps, Beta range: {beta_start:.6f} → {beta_end:.6f}")
+             return np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
+-        else:
+-            # Fast-DDPM approach: Sample from proven 1000-step alpha_cumprod curve
+-            print(f"[BETA SCHEDULE] Using Fast-DDPM approach for {num_diffusion_timesteps} steps")
++        elif sample_schedule == "sampled":
++            print(f"[BETA SCHEDULE] [sampled] Sampling {num_diffusion_timesteps} steps from 1000-step curve")
+             full_betas = np.linspace(0.0001, 0.02, 1000, dtype=np.float64)
+             full_alphas = 1.0 - full_betas
+             full_alphas_cumprod = np.cumprod(full_alphas, axis=0)
+-            # Strategic sampling: non-uniform for 10, uniform otherwise
+-            if num_diffusion_timesteps == 10:
+-                indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
+-                print(f"[BETA SCHEDULE] Using non-uniform sampling: {indices}")
+-            else:
+-                indices = np.linspace(0, 999, num_diffusion_timesteps, dtype=int)
+-                print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
++            indices = np.linspace(0, 999, num_diffusion_timesteps, dtype=int)
++            print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
+             sampled_alphas_cumprod = full_alphas_cumprod[indices]
+             alphas_cumprod_prev = np.concatenate([[1.0], sampled_alphas_cumprod[:-1]])
+             alphas = sampled_alphas_cumprod / alphas_cumprod_prev
+             betas = 1.0 - alphas
+             betas = np.clip(betas, 0.0001, 0.999)
+-            print(f"[BETA SCHEDULE] ✅ Fast-DDPM betas range: {betas.min():.6f} → {betas.max():.6f}")
+-            print(f"[BETA SCHEDULE] Alpha_cumprod range: {sampled_alphas_cumprod.min():.6f} → {sampled_alphas_cumprod.max():.6f}")
++            print(f"[BETA SCHEDULE] ✅ Sampled betas range: {betas.min():.6f} → {betas.max():.6f}")
+             return betas
++        else:
++            raise NotImplementedError(f"Unknown sample_schedule: {sample_schedule}")
+     elif schedule_name == "cosine":
+         return betas_for_alpha_bar(
+             num_diffusion_timesteps,
+@@ -73,33 +66,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
+     else:
+         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
+ 
+-# Fast-DDPM timestep sampler
+-class FastDDPMScheduleSampler:
+-    """
+-    Fast-DDPM timestep sampler that uses strategic sampling from fewer timesteps
+-    """
+-    def __init__(self, num_timesteps=10, strategy='non-uniform'):
+-        import numpy as np
+-        self.num_timesteps = num_timesteps
+-        self.strategy = strategy
+-        if strategy == 'non-uniform' and num_timesteps == 10:
+-            self.timestep_indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
+-        elif strategy == 'uniform':
+-            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
+-        else:
+-            self.timestep_indices = np.linspace(0, 999, num_timesteps, dtype=int)
+-        print(f"[FAST-DDPM] Using {strategy} sampling with indices: {self.timestep_indices}")
+-    def sample(self, batch_size, device):
+-        import numpy as np
+-        import torch
+-        n = batch_size
+-        idx_1 = np.random.randint(0, len(self.timestep_indices), size=(n // 2 + 1,))
+-        idx_2 = len(self.timestep_indices) - idx_1 - 1
+-        idx = np.concatenate([idx_1, idx_2], axis=0)[:n]
+-        # Return local indices for SpacedDiffusion/Fast-DDPM
+-        idx_tensor = torch.from_numpy(idx).long().to(device)
+-        weights = torch.ones_like(idx_tensor).float()
+-        return idx_tensor, weights
++
+ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
+     """
+     Create a beta schedule that discretizes the given alpha_t_bar function,
+diff --git a/guided_diffusion/script_util.py b/guided_diffusion/script_util.py
+index c0a5825..cf4b188 100644
+--- a/guided_diffusion/script_util.py
++++ b/guided_diffusion/script_util.py
+@@ -1,3 +1,21 @@
++def get_sample_schedule_args():
++    """
++    Helper to retrieve sample_schedule and diffusion_steps from global argparse args.
++    This is a workaround to allow get_named_beta_schedule to access CLI args.
++    """
++    import sys
++    sample_schedule = 'direct'
++    num_timesteps = 1000
++    for i, arg in enumerate(sys.argv):
++        if arg.startswith('--sample_schedule='):
++            sample_schedule = arg.split('=')[1]
++        elif arg == '--sample_schedule' and i+1 < len(sys.argv):
++            sample_schedule = sys.argv[i+1]
++        if arg.startswith('--diffusion_steps='):
++            num_timesteps = int(arg.split('=')[1])
++        elif arg == '--diffusion_steps' and i+1 < len(sys.argv):
++            num_timesteps = int(sys.argv[i+1])
++    return sample_schedule, num_timesteps
+ import argparse
+ import inspect
+ 
+@@ -80,8 +98,8 @@ def model_and_diffusion_defaults():
+         mode='default',
+         use_freq=False,
+         predict_xstart=False,
+-        use_fast_ddpm=False,              # NEW
+-        fast_ddpm_strategy='non-uniform', # NEW
++        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
++        # use_fast_ddpm and fast_ddpm_strategy are deprecated
+     )
+     res.update(diffusion_defaults())
+     return res
+@@ -127,8 +145,7 @@ def create_model_and_diffusion(
+     mode,
+     use_freq,
+     dataset,
+-    use_fast_ddpm=False,              # NEW
+-    fast_ddpm_strategy='non-uniform', # NEW
++    sample_schedule='direct',         # NEW
+ ):
+     model = create_model(
+         image_size,
+@@ -166,8 +183,7 @@ def create_model_and_diffusion(
+         rescale_learned_sigmas=rescale_learned_sigmas,
+         timestep_respacing=timestep_respacing,
+         mode=mode,
+-        use_fast_ddpm=use_fast_ddpm,              # NEW
+-        fast_ddpm_strategy=fast_ddpm_strategy,    # NEW
++        sample_schedule=sample_schedule,
+     )
+     return model, diffusion
+ 
+@@ -523,14 +539,13 @@ def create_gaussian_diffusion(
+     rescale_learned_sigmas=False,
+     timestep_respacing="",
+     mode='default',
+-    use_fast_ddpm=False,
+-    fast_ddpm_strategy='non-uniform',
++    sample_schedule='direct',
+     **kwargs
+ ):
+     # Remove keys not accepted by SpacedDiffusion/GaussianDiffusion
+     kwargs.pop('use_fast_ddpm', None)
+     kwargs.pop('fast_ddpm_strategy', None)
+-    betas = gd.get_named_beta_schedule(noise_schedule, steps)
++    betas = gd.get_named_beta_schedule(noise_schedule, steps, sample_schedule)
+ 
+     if use_kl:
+         loss_type = gd.LossType.RESCALED_KL
+diff --git a/guided_diffusion/train_util.py b/guided_diffusion/train_util.py
+index f97f978..49ae0f8 100644
+--- a/guided_diffusion/train_util.py
++++ b/guided_diffusion/train_util.py
+@@ -55,8 +55,7 @@ class TrainLoop:
+         summary_writer=None,
+         mode='default',
+         loss_level='image',
+-        use_fast_ddpm=False,          # NEW: Enable Fast-DDPM
+-        fast_ddpm_strategy='non-uniform',  # NEW: Fast-DDPM sampling strategy
++        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
+     ):
+         self.summary_writer = summary_writer
+         self.mode = mode
+@@ -103,24 +102,7 @@ class TrainLoop:
+             logger.warn(
+                 "Training requires CUDA. "
+             )
+-        # Fast-DDPM integration
+-        self.use_fast_ddpm = use_fast_ddpm
+-        self.fast_ddpm_strategy = fast_ddpm_strategy
+-        if self.use_fast_ddpm:
+-            from .gaussian_diffusion import FastDDPMScheduleSampler
+-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
+-                num_timesteps=diffusion.num_timesteps,
+-                strategy=fast_ddpm_strategy
+-            )
+-            print(f"[TRAIN] Using Fast-DDPM with {fast_ddpm_strategy} sampling")
+-        # Fast-DDPM/SpacedDiffusion integration: always initialize fast_ddpm_sampler if needed
+-        if hasattr(self.diffusion, 'timestep_map'):
+-            from .gaussian_diffusion import FastDDPMScheduleSampler
+-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
+-                num_timesteps=len(self.diffusion.timestep_map),
+-                strategy=self.fast_ddpm_strategy
+-            )
+-            print(f"[TRAIN] Using Fast-DDPM/SpacedDiffusion with {self.fast_ddpm_strategy} sampling")
++        # Fast-DDPM logic removed; now handled by sample_schedule and beta schedule
+ 
+     def _load_and_sync_parameters(self):
+         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
+diff --git a/run.sh b/run.sh
+index 2bf3f06..b913369 100755
+--- a/run.sh
++++ b/run.sh
+@@ -12,6 +12,7 @@ ITERATIONS=1200;          # training iteration (as a multiple of 1k) checkpoint
+ SAMPLING_STEPS=0;         # number of steps for accelerated sampling, 0 for the default 1000
+ RUN_DIR="";               # tensorboard dir to be set for the evaluation (displayed at start of training)
+ 
++
+ # detailed settings (no need to change for reproducing)
+ if [[ $MODEL == 'unet' ]]; then
+   echo "MODEL: WDM (U-Net)";
+@@ -21,6 +22,9 @@ if [[ $MODEL == 'unet' ]]; then
+   IMAGE_SIZE=224;
+   IN_CHANNELS=32;           # Change to work with different number of conditioning images 8 + 8x (with x number of conditioning images)
+   NOISE_SCHED='linear';
++  # Set sample schedule and steps explicitly
++  SAMPLE_SCHEDULE=${SAMPLE_SCHEDULE:-direct}   # direct or sampled
++  DIFFUSION_STEPS=${DIFFUSION_STEPS:-1000}
+ else
+   echo "MODEL TYPE NOT FOUND -> Check the supported configurations again";
+ fi
+@@ -59,6 +63,7 @@ elif [[ $MODE == 'auto' ]]; then
+   fi
+ fi
+ 
++
+ COMMON="
+ --lr_anneal_steps=100
+ --dataset=${DATASET}
+@@ -70,7 +75,8 @@ COMMON="
+ --use_scale_shift_norm=False
+ --attention_resolutions=
+ --channel_mult=${CHANNEL_MULT}
+---diffusion_steps=10
++--diffusion_steps=${DIFFUSION_STEPS}
++--sample_schedule=${SAMPLE_SCHEDULE}
+ --noise_schedule=${NOISE_SCHED}
+ --rescale_learned_sigmas=False
+ --rescale_timesteps=False
+diff --git a/scripts/train.py b/scripts/train.py
+index 14fa803..32a8dfb 100644
+--- a/scripts/train.py
++++ b/scripts/train.py
+@@ -53,13 +53,11 @@ def main():
+ 
+     dist_util.setup_dist(devices=args.devices)
+ 
+-    # Log Fast-DDPM configuration
+-    if getattr(args, 'use_fast_ddpm', False):
+-        print(f"[FAST-DDPM] Enabled with {getattr(args, 'fast_ddpm_strategy', 'non-uniform')} strategy")
+-        print(f"[FAST-DDPM] Training with {getattr(args, 'diffusion_steps', 1000)} timesteps")
++    # Log sample schedule configuration
++    print(f"[SCHEDULE] sample_schedule: {getattr(args, 'sample_schedule', 'direct')}")
++    print(f"[SCHEDULE] diffusion_steps: {getattr(args, 'diffusion_steps', 1000)}")
+     print("Creating model and diffusion...")
+     arguments = args_to_dict(args, model_and_diffusion_defaults().keys())
+-    # Do NOT remove use_fast_ddpm and fast_ddpm_strategy here; they are needed by create_model_and_diffusion
+     model, diffusion = create_model_and_diffusion(**arguments)
+     model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())
+     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=1000)
+@@ -93,8 +91,7 @@ def main():
+         summary_writer=None,
+         mode='i2i',
+         contr=args.contr,
+-        use_fast_ddpm=args.use_fast_ddpm,              # NEW
+-        fast_ddpm_strategy=args.fast_ddpm_strategy,    # NEW
++        sample_schedule=args.sample_schedule,
+     ).run_loop()
+ 
+ 
+@@ -132,8 +129,7 @@ def create_argparser():
+         additive_skips=False,
+         use_freq=False,
+         contr='t1n',
+-        use_fast_ddpm=False,              # NEW: Enable Fast-DDPM
+-        fast_ddpm_strategy='non-uniform', # NEW: Sampling strategy
++        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
+     )
+     from guided_diffusion.script_util import model_and_diffusion_defaults, add_dict_to_argparser
+     defaults.update(model_and_diffusion_defaults())
