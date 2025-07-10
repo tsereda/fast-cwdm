@@ -44,8 +44,7 @@ def diffusion_defaults():
         dims=2,
         num_groups=32,
         in_channels=1,
-        use_fast_ddpm=False,              # NEW
-        fast_ddpm_strategy='non-uniform', # NEW: 'uniform' or 'non-uniform'
+        # Removed use_fast_ddpm and fast_ddpm_strategy to avoid TypeError
     )
 
 

@@ -97,7 +97,7 @@ fi
 
 
 COMMON="
---lr_anneal_steps=100
+--lr_anneal_steps=101
 --dataset=${DATASET}
 --num_channels=${CHANNELS}
 --class_cond=False
