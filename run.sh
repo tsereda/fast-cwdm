@@ -1,3 +1,32 @@
+#!/bin/bash
+
+# Parse command line arguments
+SAMPLING_STRATEGY=""
+TIMESTEPS=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --sampling-strategy)
+      SAMPLING_STRATEGY="$2"
+      shift 2
+      ;;
+    --timesteps)
+      TIMESTEPS="$2"
+      shift 2
+      ;;
+    --help)
+      echo "Usage: $0 [--sampling-strategy STRATEGY] [--timesteps STEPS]"
+      echo "  --sampling-strategy: direct or sampled (default: direct)"
+      echo "  --timesteps: number of sampling steps (default: 0 for default 1000)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option $1"
+      exit 1
+      ;;
+  esac
+done
+
 # general settings
 GPU=0;                    # gpu to use
 SEED=42;                  # randomness seed for sampling
@@ -7,11 +36,10 @@ DATASET='brats';          # brats
 MODEL='unet';             # 'unet'
 CONTR='t1n'               # contrast to be generate by the network ('t1n', t1c', 't2w', 't2f') - just relevant during training
 
-# settings for sampling/inference
+# settings for sampling/inference - now using command line args with defaults
 ITERATIONS=1200;          # training iteration (as a multiple of 1k) checkpoint to use for sampling
-SAMPLING_STEPS=0;         # number of steps for accelerated sampling, 0 for the default 1000
+SAMPLING_STEPS=${TIMESTEPS:-0};         # number of steps for accelerated sampling, 0 for the default 1000
 RUN_DIR="";               # tensorboard dir to be set for the evaluation (displayed at start of training)
-
 
 # detailed settings (no need to change for reproducing)
 if [[ $MODEL == 'unet' ]]; then
@@ -22,12 +50,16 @@ if [[ $MODEL == 'unet' ]]; then
   IMAGE_SIZE=224;
   IN_CHANNELS=32;           # Change to work with different number of conditioning images 8 + 8x (with x number of conditioning images)
   NOISE_SCHED='linear';
-  # Set sample schedule and steps explicitly
-  SAMPLE_SCHEDULE=${SAMPLE_SCHEDULE:-direct}   # direct or sampled
+  # Set sample schedule and steps explicitly - now using command line args with defaults
+  SAMPLE_SCHEDULE=${SAMPLING_STRATEGY:-direct}   # direct or sampled
   DIFFUSION_STEPS=${DIFFUSION_STEPS:-1000}
 else
   echo "MODEL TYPE NOT FOUND -> Check the supported configurations again";
 fi
+
+# Print the values being used
+echo "Using sampling strategy: $SAMPLE_SCHEDULE"
+echo "Using sampling steps: $SAMPLING_STEPS"
 
 # some information and overwriting batch size for sampling
 # (overwrite in case you want to sample with a higher batch size)

@@ -119,8 +119,12 @@ spec:
             echo "To access TensorBoard, run:"
             echo "kubectl port-forward pod/cwdm-brats 6006:6006"
           fi
+
+          bash run.sh --sampling-strategy direct --timesteps 1000
+          bash run.sh --sampling-strategy direct --timesteps 10
+          bash run.sh --sampling-strategy sampled --timesteps 10
+          bash run.sh --sampling-strategy sampled --timesteps 1000
           
-          bash run.sh
           ls -la /data/checkpoints/
 
           tail -f /dev/null
