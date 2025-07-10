@@ -60,7 +60,7 @@ def main():
     arguments = args_to_dict(args, model_and_diffusion_defaults().keys())
     model, diffusion = create_model_and_diffusion(**arguments)
     model.to(dist_util.dev([0, 1]) if len(args.devices) > 1 else dist_util.dev())
-    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=1000)
+    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion, maxt=diffusion.num_timesteps)
     if args.dataset == 'brats':
         ds = BRATSVolumes(args.data_dir, mode='train')
     datal = th.utils.data.DataLoader(ds,
