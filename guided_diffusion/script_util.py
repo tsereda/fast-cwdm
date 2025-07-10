@@ -545,7 +545,7 @@ def create_gaussian_diffusion(
     # Remove keys not accepted by SpacedDiffusion/GaussianDiffusion
     kwargs.pop('use_fast_ddpm', None)
     kwargs.pop('fast_ddpm_strategy', None)
-    betas = gd.get_named_beta_schedule(noise_schedule, steps)
+    betas = gd.get_named_beta_schedule(noise_schedule, steps, sample_schedule)
 
     if use_kl:
         loss_type = gd.LossType.RESCALED_KL

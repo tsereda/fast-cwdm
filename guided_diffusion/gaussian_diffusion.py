@@ -27,7 +27,7 @@ dwt = DWT_3D('haar')
 idwt = IDWT_3D('haar')
 
 
-def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
+def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, sample_schedule="direct"):
     """
     Get a pre-defined beta schedule for the given name.
 
@@ -36,34 +36,25 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     import numpy as np
     import math
     if schedule_name == "linear":
-        # New logic: always use sample_schedule and timesteps
-        from guided_diffusion.script_util import get_sample_schedule_args
-        sample_schedule, num_timesteps = get_sample_schedule_args()
         if sample_schedule == "direct":
-            # Standard linear schedule
-            scale = 1000 / num_timesteps
+            scale = 1000 / num_diffusion_timesteps
             beta_start = scale * 0.0001
             beta_end = scale * 0.02
-            print(f"[BETA SCHEDULE] [direct] Beta range: {beta_start:.6f} → {beta_end:.6f}")
-            return np.linspace(beta_start, beta_end, num_timesteps, dtype=np.float64)
+            print(f"[BETA SCHEDULE] [direct] {num_diffusion_timesteps} steps, Beta range: {beta_start:.6f} → {beta_end:.6f}")
+            return np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
         elif sample_schedule == "sampled":
-            print(f"[BETA SCHEDULE] [sampled] Using Fast-DDPM approach for {num_timesteps} steps")
+            print(f"[BETA SCHEDULE] [sampled] Sampling {num_diffusion_timesteps} steps from 1000-step curve")
             full_betas = np.linspace(0.0001, 0.02, 1000, dtype=np.float64)
             full_alphas = 1.0 - full_betas
             full_alphas_cumprod = np.cumprod(full_alphas, axis=0)
-            if num_timesteps == 10:
-                indices = np.array([0, 111, 222, 333, 444, 555, 666, 777, 888, 999])
-                print(f"[BETA SCHEDULE] Using non-uniform sampling: {indices}")
-            else:
-                indices = np.linspace(0, 999, num_timesteps, dtype=int)
-                print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
+            indices = np.linspace(0, 999, num_diffusion_timesteps, dtype=int)
+            print(f"[BETA SCHEDULE] Using uniform sampling: {indices}")
             sampled_alphas_cumprod = full_alphas_cumprod[indices]
             alphas_cumprod_prev = np.concatenate([[1.0], sampled_alphas_cumprod[:-1]])
             alphas = sampled_alphas_cumprod / alphas_cumprod_prev
             betas = 1.0 - alphas
             betas = np.clip(betas, 0.0001, 0.999)
-            print(f"[BETA SCHEDULE] ✅ Fast-DDPM betas range: {betas.min():.6f} → {betas.max():.6f}")
-            print(f"[BETA SCHEDULE] Alpha_cumprod range: {sampled_alphas_cumprod.min():.6f} → {sampled_alphas_cumprod.max():.6f}")
+            print(f"[BETA SCHEDULE] ✅ Sampled betas range: {betas.min():.6f} → {betas.max():.6f}")
             return betas
         else:
             raise NotImplementedError(f"Unknown sample_schedule: {sample_schedule}")
