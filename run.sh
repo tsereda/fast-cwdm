@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # Parse command line arguments
+
+
+# Only one argument for timesteps
 SAMPLING_STRATEGY=""
 TIMESTEPS=""
 
@@ -36,10 +39,16 @@ DATASET='brats';          # brats
 MODEL='unet';             # 'unet'
 CONTR='t1n'               # contrast to be generate by the network ('t1n', t1c', 't2w', 't2f') - just relevant during training
 
+
+
 # settings for sampling/inference - now using command line args with defaults
 ITERATIONS=1200;          # training iteration (as a multiple of 1k) checkpoint to use for sampling
-SAMPLING_STEPS=${TIMESTEPS:-0};         # number of steps for accelerated sampling, 0 for the default 1000
 RUN_DIR="";               # tensorboard dir to be set for the evaluation (displayed at start of training)
+
+# Set TIMESTEPS to 1000 if not provided
+if [[ -z "$TIMESTEPS" ]]; then
+  TIMESTEPS=1000
+fi
 
 # detailed settings (no need to change for reproducing)
 if [[ $MODEL == 'unet' ]]; then
@@ -50,16 +59,16 @@ if [[ $MODEL == 'unet' ]]; then
   IMAGE_SIZE=224;
   IN_CHANNELS=32;           # Change to work with different number of conditioning images 8 + 8x (with x number of conditioning images)
   NOISE_SCHED='linear';
-  # Set sample schedule and steps explicitly - now using command line args with defaults
+  # Set sample schedule explicitly - now using command line args with defaults
   SAMPLE_SCHEDULE=${SAMPLING_STRATEGY:-direct}   # direct or sampled
-  DIFFUSION_STEPS=${DIFFUSION_STEPS:-1000}
 else
   echo "MODEL TYPE NOT FOUND -> Check the supported configurations again";
 fi
 
+
 # Print the values being used
 echo "Using sampling strategy: $SAMPLE_SCHEDULE"
-echo "Using sampling steps: $SAMPLING_STEPS"
+echo "Using timesteps: $TIMESTEPS"
 
 # some information and overwriting batch size for sampling
 # (overwrite in case you want to sample with a higher batch size)
@@ -96,6 +105,7 @@ elif [[ $MODE == 'auto' ]]; then
 fi
 
 
+
 COMMON="
 --lr_anneal_steps=101
 --dataset=${DATASET}
@@ -107,7 +117,7 @@ COMMON="
 --use_scale_shift_norm=False
 --attention_resolutions=
 --channel_mult=${CHANNEL_MULT}
---diffusion_steps=${DIFFUSION_STEPS}
+--diffusion_steps=${TIMESTEPS}
 --sample_schedule=${SAMPLE_SCHEDULE}
 --noise_schedule=${NOISE_SCHED}
 --rescale_learned_sigmas=False
@@ -149,7 +159,7 @@ SAMPLE="
 --output_dir=/data/results/${DATASET}_${MODEL}_${ITERATIONS}000/
 --num_samples=1000
 --use_ddim=False
---sampling_steps=${SAMPLING_STEPS}
+--sampling_steps=${TIMESTEPS}
 --clip_denoised=True
 "
 
