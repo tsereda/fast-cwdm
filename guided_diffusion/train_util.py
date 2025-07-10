@@ -66,8 +66,7 @@ class TrainLoop:
         self.iterdatal = iter(data)
         self.batch_size = batch_size
         self.in_channels = in_channels
-        # Add use_fast_ddpm attribute for compatibility
-        self.use_fast_ddpm = False
+        # No fast_ddpm_sampler or use_fast_ddpm attributes needed; rely on sample_schedule and diffusion_steps
         self.image_size = image_size
         self.contr = contr
         self.microbatch = microbatch if microbatch > 0 else batch_size
@@ -295,11 +294,8 @@ class TrainLoop:
             batch_size = batch.shape[0]
 
         # Sample timesteps
-        if self.use_fast_ddpm or hasattr(self.diffusion, 'timestep_map'):
-            t, weights = self.fast_ddpm_sampler.sample(batch_size, dist_util.dev())
-            t = t.long().to(weights.device)  # Always use as local index
-        else:
-            t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
+        t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
+        # If your diffusion object has a custom timestep_map, handle it inside schedule_sampler or diffusion
         #print(f"[DEBUG] Timesteps (local indices): {t.tolist()}")
 
         compute_losses = functools.partial(
