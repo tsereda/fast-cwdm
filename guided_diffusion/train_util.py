@@ -298,7 +298,7 @@ class TrainLoop:
             t = t.long().to(weights.device)  # Always use as local index
         else:
             t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
-        print(f"[DEBUG] Timesteps (local indices): {t.tolist()}")
+        #print(f"[DEBUG] Timesteps (local indices): {t.tolist()}")
 
         compute_losses = functools.partial(
             self.diffusion.training_losses,
