@@ -55,8 +55,7 @@ class TrainLoop:
         summary_writer=None,
         mode='default',
         loss_level='image',
-        use_fast_ddpm=False,          # NEW: Enable Fast-DDPM
-        fast_ddpm_strategy='non-uniform',  # NEW: Fast-DDPM sampling strategy
+        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
     ):
         self.summary_writer = summary_writer
         self.mode = mode
@@ -103,24 +102,7 @@ class TrainLoop:
             logger.warn(
                 "Training requires CUDA. "
             )
-        # Fast-DDPM integration
-        self.use_fast_ddpm = use_fast_ddpm
-        self.fast_ddpm_strategy = fast_ddpm_strategy
-        if self.use_fast_ddpm:
-            from .gaussian_diffusion import FastDDPMScheduleSampler
-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
-                num_timesteps=diffusion.num_timesteps,
-                strategy=fast_ddpm_strategy
-            )
-            print(f"[TRAIN] Using Fast-DDPM with {fast_ddpm_strategy} sampling")
-        # Fast-DDPM/SpacedDiffusion integration: always initialize fast_ddpm_sampler if needed
-        if hasattr(self.diffusion, 'timestep_map'):
-            from .gaussian_diffusion import FastDDPMScheduleSampler
-            self.fast_ddpm_sampler = FastDDPMScheduleSampler(
-                num_timesteps=len(self.diffusion.timestep_map),
-                strategy=self.fast_ddpm_strategy
-            )
-            print(f"[TRAIN] Using Fast-DDPM/SpacedDiffusion with {self.fast_ddpm_strategy} sampling")
+        # Fast-DDPM logic removed; now handled by sample_schedule and beta schedule
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint

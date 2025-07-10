@@ -12,6 +12,7 @@ ITERATIONS=1200;          # training iteration (as a multiple of 1k) checkpoint 
 SAMPLING_STEPS=0;         # number of steps for accelerated sampling, 0 for the default 1000
 RUN_DIR="";               # tensorboard dir to be set for the evaluation (displayed at start of training)
 
+
 # detailed settings (no need to change for reproducing)
 if [[ $MODEL == 'unet' ]]; then
   echo "MODEL: WDM (U-Net)";
@@ -21,6 +22,9 @@ if [[ $MODEL == 'unet' ]]; then
   IMAGE_SIZE=224;
   IN_CHANNELS=32;           # Change to work with different number of conditioning images 8 + 8x (with x number of conditioning images)
   NOISE_SCHED='linear';
+  # Set sample schedule and steps explicitly
+  SAMPLE_SCHEDULE=${SAMPLE_SCHEDULE:-direct}   # direct or sampled
+  DIFFUSION_STEPS=${DIFFUSION_STEPS:-1000}
 else
   echo "MODEL TYPE NOT FOUND -> Check the supported configurations again";
 fi
@@ -59,6 +63,7 @@ elif [[ $MODE == 'auto' ]]; then
   fi
 fi
 
+
 COMMON="
 --lr_anneal_steps=100
 --dataset=${DATASET}
@@ -70,7 +75,8 @@ COMMON="
 --use_scale_shift_norm=False
 --attention_resolutions=
 --channel_mult=${CHANNEL_MULT}
---diffusion_steps=10
+--diffusion_steps=${DIFFUSION_STEPS}
+--sample_schedule=${SAMPLE_SCHEDULE}
 --noise_schedule=${NOISE_SCHED}
 --rescale_learned_sigmas=False
 --rescale_timesteps=False
