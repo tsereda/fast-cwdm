@@ -163,15 +163,30 @@ SAMPLE="
 --clip_denoised=True
 "
 
-# run the python scripts
+# run the python scripts with timing
 if [[ $MODE == 'train' ]]; then
-  python scripts/train.py $TRAIN $COMMON;
+  echo "Timing training run..."
+  START_TIME=$(date +%s)
+  python scripts/train.py $TRAIN $COMMON
+  END_TIME=$(date +%s)
+  ELAPSED=$((END_TIME - START_TIME))
+  echo "[TIMING] Training completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
 
 elif [[ $MODE == 'sample' ]]; then
-  python scripts/sample.py $SAMPLE $COMMON;
+  echo "Timing sampling run..."
+  START_TIME=$(date +%s)
+  python scripts/sample.py $SAMPLE $COMMON
+  END_TIME=$(date +%s)
+  ELAPSED=$((END_TIME - START_TIME))
+  echo "[TIMING] Sampling completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
 
 elif [[ $MODE == 'auto' ]]; then
-  python scripts/sample_auto.py $SAMPLE $COMMON;
+  echo "Timing auto-sampling run..."
+  START_TIME=$(date +%s)
+  python scripts/sample_auto.py $SAMPLE $COMMON
+  END_TIME=$(date +%s)
+  ELAPSED=$((END_TIME - START_TIME))
+  echo "[TIMING] Auto-sampling completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
 
 else
   echo "MODE NOT FOUND -> Check the supported modes again";
