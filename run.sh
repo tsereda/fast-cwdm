@@ -24,7 +24,7 @@ if [[ $MODEL == 'unet' ]]; then
   NOISE_SCHED='linear';
   # Set sample schedule and steps explicitly
   SAMPLE_SCHEDULE=${SAMPLE_SCHEDULE:-direct}   # direct or sampled
-  DIFFUSION_STEPS=${DIFFUSION_STEPS:-1000}
+  DIFFUSION_STEPS=${DIFFUSION_STEPS:-10}
 else
   echo "MODEL TYPE NOT FOUND -> Check the supported configurations again";
 fi
