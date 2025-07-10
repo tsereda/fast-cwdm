@@ -66,6 +66,8 @@ class TrainLoop:
         self.iterdatal = iter(data)
         self.batch_size = batch_size
         self.in_channels = in_channels
+        # Add use_fast_ddpm attribute for compatibility
+        self.use_fast_ddpm = False
         self.image_size = image_size
         self.contr = contr
         self.microbatch = microbatch if microbatch > 0 else batch_size
