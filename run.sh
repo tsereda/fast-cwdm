@@ -55,7 +55,7 @@ if [[ $MODEL == 'unet' ]]; then
   echo "MODEL: WDM (U-Net)";
   CHANNEL_MULT=1,2,2,4,4;
   ADDITIVE_SKIP=False;      # Set True to save memory
-  BATCH_SIZE=1;
+  BATCH_SIZE=2;
   IMAGE_SIZE=224;
   IN_CHANNELS=32;           # Change to work with different number of conditioning images 8 + 8x (with x number of conditioning images)
   NOISE_SCHED='linear';
