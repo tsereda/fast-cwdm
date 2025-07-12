@@ -7,8 +7,13 @@
 SAMPLING_STRATEGY=""
 TIMESTEPS=""
 
+MODE="train"
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --mode)
+      MODE="$2"
+      shift 2
+      ;;
     --sampling-strategy)
       SAMPLING_STRATEGY="$2"
       shift 2
@@ -18,7 +23,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --help)
-      echo "Usage: $0 [--sampling-strategy STRATEGY] [--timesteps STEPS]"
+      echo "Usage: $0 [--mode MODE] [--sampling-strategy STRATEGY] [--timesteps STEPS]"
+      echo "  --mode: train, sample, auto, train_all_modalities (default: train)"
       echo "  --sampling-strategy: direct or sampled (default: direct)"
       echo "  --timesteps: number of sampling steps (default: 0 for default 1000)"
       exit 0
