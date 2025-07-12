@@ -108,6 +108,8 @@ if [[ $MODE == 'train' ]]; then
     done
     exit 0
   fi
+  # single-modality case
+  python scripts/train.py $TRAIN --contr=${CONTR} $COMMON
 
 elif [[ $MODE == 'sample' ]]; then
   BATCH_SIZE=1;
@@ -159,9 +161,7 @@ COMMON="
 --additive_skips=${ADDITIVE_SKIP}
 --use_freq=False
 --predict_xstart=True
---contr=${CONTR}
 "
-
 TRAIN="
 --data_dir=${DATA_DIR}
 --resume_checkpoint=

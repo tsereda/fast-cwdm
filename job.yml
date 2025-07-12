@@ -113,6 +113,10 @@ spec:
                 echo "kubectl port-forward job/fast-cwdm-job 6006:6006"
               fi
 
+              echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
+              echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
+              echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
+
               bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
               
               ls -la /data/checkpoints/
