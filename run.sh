@@ -79,7 +79,7 @@ if [[ $MODE == 'train' ]]; then
   echo "MODE: training";
   if [[ $DATASET == 'brats' ]]; then
     echo "DATASET: BRATS";
-    DATA_DIR=./datasets/BRATS2023;
+    DATA_DIR=./datasets/BRATS2023/training;
   else
     echo "DATASET NOT FOUND -> Check the supported datasets again";
   fi
