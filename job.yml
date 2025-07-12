@@ -5,6 +5,7 @@ metadata:
   labels:
     app: fast-cwdm
 spec:
+  backoffLimit: 1
   template:
     metadata:
       labels:
@@ -13,18 +14,6 @@ spec:
       nodeSelector:
         #topology.kubernetes.io/region: us-west
         nautilus.io/linstor: "true"
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: nvidia.com/gpu.product
-                operator: In
-                values:
-                - NVIDIA-A10
-                - NVIDIA-GeForce-RTX-3090
-                - NVIDIA-L40
-                - NVIDIA-A40
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -121,21 +110,19 @@ spec:
                 echo "Launching TensorBoard on port 6006, logdir: $LOGDIR"
                 tensorboard --logdir "$LOGDIR" --host 0.0.0.0 --port 6006 &
                 echo "To access TensorBoard, run:"
-                echo "kubectl port-forward pod/$(hostname) 6006:6006"
+                echo "kubectl port-forward job/fast-cwdm-job 6006:6006"
               fi
 
               bash run.sh --sampling-strategy direct --timesteps 1000
               bash run.sh --sampling-strategy direct --timesteps 10
               bash run.sh --sampling-strategy sampled --timesteps 10
-              #bash run.sh --sampling-strategy sampled --timesteps 1000
+
+              bash run.sh --sampling-strategy sampled --timesteps 1000
               
               ls -la /data/checkpoints/
 
-              # The job will complete here, so tailing is not necessary
-              # If you want the pod to remain for inspection, you might keep tail -f,
-              # but typically jobs are meant to complete.
-              echo "Job finished successfully."
-
+              echo "Job completed successfully"
+         
           volumeMounts:
             - name: workspace
               mountPath: /app
@@ -145,13 +132,14 @@ spec:
               mountPath: /dev/shm
           resources:
             requests:
-              memory: 24Gi
-              cpu: "12"
+              memory: 25Gi
+              cpu: "15"
               nvidia.com/a100: "1"
             limits:
-              memory: 32Gi
-              cpu: "16"
+              memory: 30Gi
+              cpu: "18"
               nvidia.com/a100: "1"
+    
       volumes:
         - name: workspace
           emptyDir:
@@ -164,4 +152,3 @@ spec:
             medium: Memory
             sizeLimit: 16Gi
       restartPolicy: Never
-  backoffLimit: 0 
