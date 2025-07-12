@@ -95,6 +95,7 @@ class TrainLoop:
         self.resume_step = resume_step
         self.global_batch = self.batch_size * dist.get_world_size()
         self.sync_cuda = th.cuda.is_available()
+        self.sample_schedule = sample_schedule
         self.diffusion_steps = diffusion_steps
         self._load_and_sync_parameters()
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
