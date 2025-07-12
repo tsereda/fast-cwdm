@@ -56,7 +56,7 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              git clone -b eval0 https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
+              git clone https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
               cd ${REPO_PATH}
               
               sudo apt-get update && sudo apt-get install -y p7zip-full wget git
