@@ -34,7 +34,7 @@ done
 GPU=0;                    # gpu to use
 SEED=42;                  # randomness seed for sampling
 CHANNELS=64;              # number of model base channels (we use 64 for all experiments)
-MODE='train';             # train, sample, auto (for automatic missing contrast generation)
+MODE='train';             # train, sample, auto (for automatic missing contrast generation, or train_all_modalities)
 DATASET='brats';          # brats
 MODEL='unet';             # 'unet'
 CONTR='t1n'               # contrast to be generate by the network ('t1n', t1c', 't2w', 't2f') - just relevant during training
@@ -107,7 +107,7 @@ fi
 
 
 COMMON="
---lr_anneal_steps=100000
+--lr_anneal_steps=1000
 --dataset=${DATASET}
 --num_channels=${CHANNELS}
 --class_cond=False
@@ -143,7 +143,7 @@ TRAIN="
 --image_size=${IMAGE_SIZE}
 --use_fp16=False
 --lr=1e-5
---save_interval=100000
+--save_interval=1000
 --num_workers=12
 --num_workers=12
 --devices=${GPU}
@@ -187,6 +187,22 @@ elif [[ $MODE == 'auto' ]]; then
   END_TIME=$(date +%s)
   ELAPSED=$((END_TIME - START_TIME))
   echo "[TIMING] Auto-sampling completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
+
+elif [[ $MODE == 'train_all_modalities' ]]; then
+  echo "MODE: training all modalities";
+  MODALITIES=("t1n" "t1c" "t2w" "t2f")
+  for CONTRAST in "${MODALITIES[@]}"; do
+    echo "Training for modality: $CONTRAST"
+    CONTR=$CONTRAST
+    # Optionally set output/checkpoint dirs per modality here
+    # Run the training command for this modality
+    START_TIME=$(date +%s)
+    python scripts/train.py $TRAIN --contr=${CONTR} $COMMON
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+    echo "[TIMING] Training for $CONTRAST completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
+  done
+  exit 0
 
 else
   echo "MODE NOT FOUND -> Check the supported modes again";
