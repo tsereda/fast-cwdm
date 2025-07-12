@@ -5,9 +5,7 @@ metadata:
   labels:
     app: fast-cwdm
 spec:
-  completions: 1
-  parallelism: 1
-  backoffLimit: 3
+  backoffLimit: 1
   template:
     metadata:
       labels:
@@ -16,7 +14,6 @@ spec:
       nodeSelector:
         #topology.kubernetes.io/region: us-west
         nautilus.io/linstor: "true"
-
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -119,6 +116,7 @@ spec:
               bash run.sh --sampling-strategy direct --timesteps 1000
               bash run.sh --sampling-strategy direct --timesteps 10
               bash run.sh --sampling-strategy sampled --timesteps 10
+
               bash run.sh --sampling-strategy sampled --timesteps 1000
               
               ls -la /data/checkpoints/
@@ -132,7 +130,6 @@ spec:
               mountPath: /data
             - name: shm
               mountPath: /dev/shm
-        
           resources:
             requests:
               memory: 25Gi
@@ -142,7 +139,7 @@ spec:
               memory: 30Gi
               cpu: "18"
               nvidia.com/a100: "1"
-     
+    
       volumes:
         - name: workspace
           emptyDir:
@@ -154,5 +151,4 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 16Gi
-     
       restartPolicy: Never
