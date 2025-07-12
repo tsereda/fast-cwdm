@@ -89,7 +89,7 @@ elif [[ $MODE == 'sample' ]]; then
   echo "MODE: sampling (image-to-image translation)";
   if [[ $DATASET == 'brats' ]]; then
     echo "DATASET: BRATS";
-    DATA_DIR=./datasets/BRATS2023;
+    DATA_DIR=./datasets/BRATS2023/validation;
   else
     echo "DATASET NOT FOUND -> Check the supported datasets again";
   fi
