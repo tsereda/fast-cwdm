@@ -12,7 +12,7 @@ spec:
         app: fast-cwdm
     spec:
       nodeSelector:
-        #topology.kubernetes.io/region: us-west
+        topology.kubernetes.io/region: us-west
         nautilus.io/linstor: "true"
       tolerations:
         - key: nvidia.com/gpu
