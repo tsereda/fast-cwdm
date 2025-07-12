@@ -56,6 +56,7 @@ class TrainLoop:
         mode='default',
         loss_level='image',
         sample_schedule='direct',         # NEW: 'direct' or 'sampled'
+        diffusion_steps=1000,
     ):
         self.summary_writer = summary_writer
         self.mode = mode
@@ -94,6 +95,8 @@ class TrainLoop:
         self.resume_step = resume_step
         self.global_batch = self.batch_size * dist.get_world_size()
         self.sync_cuda = th.cuda.is_available()
+        self.sample_schedule = sample_schedule
+        self.diffusion_steps = diffusion_steps
         self._load_and_sync_parameters()
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         if self.resume_step:
@@ -392,14 +395,15 @@ class TrainLoop:
         def save_checkpoint(rate, state_dict):
             if dist.get_rank() == 0:
                 logger.log("Saving model...")
+                # Compose filename with modality, iterations, sample method, and timesteps
                 if self.dataset == 'brats':
-                    filename = f"brats_{(self.step+self.resume_step):06d}.pt"
+                    filename = f"brats_{self.contr}_{(self.step+self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
                 elif self.dataset == 'lidc-idri':
-                    filename = f"lidc-idri_{(self.step+self.resume_step):06d}.pt"
+                    filename = f"lidc-idri_{self.contr}_{(self.step+self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
                 elif self.dataset == 'brats_inpainting':
-                    filename = f"brats_inpainting_{(self.step + self.resume_step):06d}.pt"
+                    filename = f"brats_inpainting_{self.contr}_{(self.step + self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
                 elif self.dataset == 'synthrad':
-                    filename = f"synthrad_{(self.step + self.resume_step):06d}.pt"
+                    filename = f"synthrad_{self.contr}_{(self.step + self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
                 else:
                     raise ValueError(f'dataset {self.dataset} not implemented')
 

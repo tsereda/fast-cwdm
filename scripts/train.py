@@ -92,6 +92,7 @@ def main():
         mode='i2i',
         contr=args.contr,
         sample_schedule=args.sample_schedule,
+        diffusion_steps=args.diffusion_steps,
     ).run_loop()
 
 
