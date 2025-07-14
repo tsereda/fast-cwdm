@@ -131,10 +131,12 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
     modality_order = ['t1n', 't1c', 't2w', 't2f']
     available_order = [m for m in modality_order if m != missing_modality]
     
-    # Move tensors to device
+    # Move tensors to device and ensure 5D shape [B, C, D, H, W]
     cond_tensors = []
     for modality in available_order:
         tensor = available_modalities[modality].to(device)
+        if tensor.dim() == 4:
+            tensor = tensor.unsqueeze(1)  # Add channel dimension: [B, 1, D, H, W]
         cond_tensors.append(tensor)
     
     # Create conditioning vector using DWT
