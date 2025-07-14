@@ -234,7 +234,7 @@ def create_default_args():
     args.rescale_learned_sigmas = False
     args.sample_schedule = "direct"
     args.mode = 'i2i'
-    
+    args.dataset = "brats"  # Added to fix missing attribute error
     return args
 
 
