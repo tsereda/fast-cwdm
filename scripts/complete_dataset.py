@@ -313,44 +313,48 @@ def main():
                        help="Directory containing trained model checkpoints")
     parser.add_argument("--device", default="cuda:0", help="Device to run inference on")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    
+    parser.add_argument("--max_cases", type=int, default=None, help="Maximum number of cases to process (for debugging)")
+
     args = parser.parse_args()
-    
+
     # Setup
     th.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
-    
+
     device = th.device(args.device if th.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-    
+
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
-    
+
     # Process all cases
     case_dirs = [d for d in os.listdir(args.input_dir) 
                 if os.path.isdir(os.path.join(args.input_dir, d))]
     case_dirs.sort()
-    
+
+    if args.max_cases is not None:
+        case_dirs = case_dirs[:args.max_cases]
+
     print(f"Found {len(case_dirs)} cases to process")
-    
+
     successful = 0
     failed = 0
-    
+
     for case_dir_name in case_dirs:
         case_dir = os.path.join(args.input_dir, case_dir_name)
         success = complete_case(case_dir, args.output_dir, device)
-        
+
         if success:
             successful += 1
         else:
             failed += 1
-    
+
     print(f"\nCompleted processing:")
     print(f"Successful: {successful}")
     print(f"Failed: {failed}")
     print(f"Total: {len(case_dirs)}")
-    
+
     if successful > 0:
         print(f"\nCompleted dataset saved to: {args.output_dir}")
 
