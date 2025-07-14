@@ -107,7 +107,7 @@ fi
 
 # Define common arguments (after variables are set)
 COMMON="
---lr_anneal_steps=10000
+--lr_anneal_steps=50
 --dataset=${DATASET}
 --num_channels=${CHANNELS}
 --class_cond=False
@@ -142,7 +142,7 @@ TRAIN="
 --image_size=${IMAGE_SIZE}
 --use_fp16=False
 --lr=1e-5
---save_interval=1000
+--save_interval=50
 --num_workers=12
 --devices=${GPU}
 "
