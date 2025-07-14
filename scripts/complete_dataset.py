@@ -298,7 +298,9 @@ def complete_case(case_dir, output_dir, device):
         return True
         
     except Exception as e:
+        import traceback
         print(f"Error processing {case_name}: {e}")
+        traceback.print_exc()
         return False
 
 
