@@ -93,7 +93,7 @@ spec:
             echo "Validation data copied successfully"
           fi
 
-          pip install nibabel blobfile wandb batchgenerators simpleITK
+          pip install nibabel blobfile wandb batchgenerators simpleITK gdown
           echo "dropping modalities"
           python scripts/drop_modality.py
           mkdir -p ./checkpoints
