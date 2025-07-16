@@ -20,3 +20,7 @@ dependencies:
     - matplotlib==3.8.3
     - tqdm==4.66.2
     - dicom2nifti==2.4.10
+    - wandb
+    - nibabel
+    - matplotlib 
+    - blobfile

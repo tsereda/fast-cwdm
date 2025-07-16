@@ -68,29 +68,31 @@ spec:
           
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
           
-          for dataset in "TrainingData" "ValidationData"; do
-            zip_file="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}.zip"
-            if [ -f "$zip_file" ]; then
-              echo "Extracting ${dataset}..."
-              cd /data && 7z x "$zip_file" -y
-              #sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}"
-              cd ${REPO_PATH}
-            fi
-          done
-
-          mkdir -p datasets/BRATS2023/training
-          mkdir -p datasets/BRATS2023/validation
+          # Create target directories
+          mkdir -p datasets/BRATS2023
           
-          if [ -d "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData" ]; then
-            echo "Copying training data..."
-            cp -r /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData/* datasets/BRATS2023/training/
-            echo "Training data copied successfully"
+          # Extract both datasets directly to BRATS2023 directory
+          training_zip="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData.zip"
+          if [ -f "$training_zip" ]; then
+            echo "Extracting training data..."
+            7z x "$training_zip" -o"datasets/BRATS2023/" -y
+            echo "Training data extracted successfully"
           fi
           
-          if [ -d "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData" ]; then
-            echo "Copying validation data..."
-            cp -r /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/* datasets/BRATS2023/validation/
-            echo "Validation data copied successfully"
+          validation_zip="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip"
+          if [ -f "$validation_zip" ]; then
+            echo "Extracting validation data..."
+            7z x "$validation_zip" -o"datasets/BRATS2023/" -y
+            echo "Validation data extracted successfully"
+          fi
+          
+          # Create symlinks to maintain expected directory structure
+          if [ -d "datasets/BRATS2023/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData" ]; then
+            ln -sf ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData datasets/BRATS2023/training
+          fi
+          
+          if [ -d "datasets/BRATS2023/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData" ]; then
+            ln -sf ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData datasets/BRATS2023/validation
           fi
           
           echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
@@ -156,7 +158,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-1
+        claimName: brats2025-3
     - name: shm
       emptyDir:
         medium: Memory
