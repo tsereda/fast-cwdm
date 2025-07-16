@@ -117,7 +117,7 @@ spec:
               echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
               echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
 
-              bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
+              bash run.sh --sampling-strategy sampled --timesteps 10 --mode train --train_modality all
               
               ls -la /data/checkpoints/
 
