@@ -142,7 +142,7 @@ TRAIN="
 --image_size=${IMAGE_SIZE}
 --use_fp16=False
 --lr=1e-5
---save_interval=1000
+--save_interval=50
 --num_workers=12
 --devices=${GPU}
 "
