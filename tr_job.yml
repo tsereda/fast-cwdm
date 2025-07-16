@@ -5,7 +5,7 @@ metadata:
   labels:
     app: fast-cwdm
 spec:
-  backoffLimit: 1
+  backoffLimit: 0
   template:
     metadata:
       labels:
@@ -61,30 +61,38 @@ spec:
               
               sudo apt-get update && sudo apt-get install -y p7zip-full wget git
               
-              for dataset in "TrainingData" "ValidationData"; do
-                zip_file="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}.zip"
-                if [ -f "$zip_file" ]; then
-                  echo "Extracting ${dataset}..."
-                  cd /data && 7z x "$zip_file" -y
-                  #sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}"
-                  cd ${REPO_PATH}
-                fi
-              done
-
+              # Create dataset directories
               mkdir -p datasets/BRATS2023/training
               mkdir -p datasets/BRATS2023/validation
               
-              if [ -d "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData" ]; then
-                echo "Copying training data..."
-                cp -r /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData/* datasets/BRATS2023/training/
-                echo "Training data copied successfully"
-              fi
-              
-              if [ -d "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData" ]; then
-                echo "Copying validation data..."
-                cp -r /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/* datasets/BRATS2023/validation/
-                echo "Validation data copied successfully"
-              fi
+              # Copy ZIP files to local workspace and extract directly to target directories
+              for dataset in "TrainingData" "ValidationData"; do
+                zip_file="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}.zip"
+                local_zip="/app/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}.zip"
+                
+                if [ -f "$zip_file" ]; then
+                  echo "Copying ${dataset} ZIP to local workspace..."
+                  cp "$zip_file" "$local_zip"
+                  
+                  echo "Extracting ${dataset}..."
+                  # Extract to temp directory
+                  mkdir -p /tmp/extract
+                  7z x "$local_zip" -o"/tmp/extract" -y
+                  
+                  # Move contents to final destination
+                  if [ "$dataset" = "TrainingData" ]; then
+                    mv /tmp/extract/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData/* datasets/BRATS2023/training/
+                  elif [ "$dataset" = "ValidationData" ]; then
+                    mv /tmp/extract/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/* datasets/BRATS2023/validation/
+                  fi
+                  
+                  # Clean up
+                  rm -rf /tmp/extract
+                  rm "$local_zip"
+                  
+                  echo "${dataset} processed successfully"
+                fi
+              done
               
               echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
               echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
@@ -106,18 +114,16 @@ spec:
               python --version
 
               LOGDIR="/data/runs"
-              if [ "$USE_TENSORBOARD" = "true" ]; then
-                echo "Launching TensorBoard on port 6006, logdir: $LOGDIR"
-                tensorboard --logdir "$LOGDIR" --host 0.0.0.0 --port 6006 &
-                echo "To access TensorBoard, run:"
-                echo "kubectl port-forward job/fast-cwdm-job 6006:6006"
-              fi
 
               echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
               echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
               echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
 
-              bash run.sh --sampling-strategy sampled --timesteps 10 --mode train --train_modality all
+              python -c "import torch; print(f'PyTorch version (conda): {torch.__version__}')"
+              python -c "import torch; print(f'CUDA available (conda): {torch.cuda.is_available()}')"
+              python -c "import torch; print(f'GPUs available (conda): {torch.cuda.device_count()}')"
+
+              bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
               
               ls -la /data/checkpoints/
 
@@ -145,7 +151,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-1
+            claimName: brats2025-3
         - name: shm
           emptyDir:
             medium: Memory
