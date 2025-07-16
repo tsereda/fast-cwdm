@@ -6,12 +6,12 @@ channels:
 dependencies:
   - python=3.10.13
   - numpy=1.26.4
-  - pytorch=2.2.0=py3.10_cuda11.8_cudnn8.7.0_0
-  - pytorch-cuda=11.8
+  - pytorch=2.2.0=py3.10_cuda12.1_cudnn8.9.2_0
+  - pytorch-cuda=12.1
+  - torchaudio=2.2.0=py310_cu121  # Fixed: changed from cu118 to cu121
+  - torchvision=0.17.0=py310_cu121  # Fixed: changed from cu118 to cu121
   - pywavelets=1.4.1
   - scipy=1.12.0
-  - torchaudio=2.2.0=py310_cu118
-  - torchvision=0.17.0=py310_cu118
   - pip
   - pip:
     - nibabel==5.2.0
@@ -21,6 +21,3 @@ dependencies:
     - tqdm==4.66.2
     - dicom2nifti==2.4.10
     - wandb
-    - nibabel
-    - matplotlib 
-    - blobfile
