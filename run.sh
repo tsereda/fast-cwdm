@@ -107,7 +107,7 @@ fi
 
 # Define common arguments (after variables are set)
 COMMON="
---lr_anneal_steps=10000
+--lr_anneal_steps=5000
 --dataset=${DATASET}
 --num_channels=${CHANNELS}
 --class_cond=False
