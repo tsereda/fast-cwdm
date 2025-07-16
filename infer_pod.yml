@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: fast-cwdm
+  name: infer-fast-cwdm
   labels:
     app: fast-cwdm
 spec:
@@ -63,7 +63,7 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone -b eval0 https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
+          git clone -b eval2 https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
           cd ${REPO_PATH}
           
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
@@ -92,43 +92,25 @@ spec:
             cp -r /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/* datasets/BRATS2023/validation/
             echo "Validation data copied successfully"
           fi
-          
-          echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
-          echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
-          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
-          
-          pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
-          
-          python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
-          python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
-          
-          conda init bash
-          source ~/.bashrc
 
-          mamba env create -f environment.yml
-          
-          conda activate cwdm
-          
-          conda info --envs
-          python --version
-
-          LOGDIR="/data/runs"
-          if [ "$USE_TENSORBOARD" = "true" ]; then
-            echo "Launching TensorBoard on port 6006, logdir: $LOGDIR"
-            tensorboard --logdir "$LOGDIR" --host 0.0.0.0 --port 6006 &
-            echo "To access TensorBoard, run:"
-            echo "kubectl port-forward pod/cwdm-brats 6006:6006"
-          fi
-
-          echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
-          echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
-          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
-
-          bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
-          
-          ls -la /data/checkpoints/
-
-          echo "Job completed successfully"
+          pip install nibabel blobfile wandb batchgenerators simpleITK gdown
+          echo "dropping modalities"
+          python scripts/drop_modality.py
+          mkdir -p ./checkpoints
+          # cp /data/checkpoints/brats_t1n_010000_direct_1000.pt ./checkpoints/
+          # cp /data/checkpoints/brats_t1c_001000_direct_1000.pt ./checkpoints/
+          # cp /data/checkpoints/brats_t2w_000050_direct_1000.pt ./checkpoints/
+          # cp /data/checkpoints/brats_t2f_000050_direct_1000.pt ./checkpoints/
+          cp /data/checkpoints/brats_t1n_010000_sampled_10.pt ./checkpoints/
+          cp /data/checkpoints/brats_t1c_001000_sampled_10.pt ./checkpoints/
+          cp /data/checkpoints/brats_t2w_000050_sampled_10.pt ./checkpoints/
+          cp /data/checkpoints/brats_t2f_000050_sampled_10.pt ./checkpoints/
+          echo "Models copied:" && ls -la ./checkpoints/
+          python scripts/complete_dataset.py \
+            --input_dir ./datasets/BRATS2023/pseudo_validation \
+            --output_dir ./datasets/BRATS2023/pseudo_validation_completed \
+            --checkpoint_dir ./checkpoints \
+            --device cuda:0
 
           tail -f /dev/null
      
