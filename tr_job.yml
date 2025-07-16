@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: fast-cwdm-job
+  name: fast-cwdm-job-fixed
   labels:
     app: fast-cwdm
 spec:
@@ -14,12 +14,6 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: us-west
         nautilus.io/linstor: "true"
-      tolerations:
-        - key: nvidia.com/gpu
-          operator: Exists
-        - key: nvidia.com/gpu
-          operator: Exists
-          effect: PreferNoSchedule
       containers:
         - name: brats-processing
           image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
@@ -56,6 +50,14 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
+              # Add GPU debugging at the start
+              echo "=== GPU DEBUG INFO ==="
+              nvidia-smi || echo "nvidia-smi not available"
+              echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+              echo "User: $(whoami)"
+              echo "Python location: $(which python)"
+              echo ""
+              
               git clone https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
               cd ${REPO_PATH}
               
@@ -98,20 +100,71 @@ spec:
               echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
               echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
               
-              pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
+              # STEP 1: Install dependencies with CUDA-enabled PyTorch using pip (like the working job)
+              echo "=== Installing PyTorch with CUDA support ==="
+              pip install --upgrade pip
+              pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117
+              pip install pyyaml tqdm numpy nibabel wandb matplotlib blobfile tensorboard
               
-              python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
-              python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
+              # STEP 2: Test CUDA availability BEFORE conda environment
+              echo "=== Testing CUDA availability (pip install) ==="
+              python -c "
+              import torch
+              print(f'PyTorch version (pip): {torch.__version__}')
+              print(f'CUDA available (pip): {torch.cuda.is_available()}')
+              print(f'CUDA version (pip): {torch.version.cuda}')
+              print(f'GPUs available (pip): {torch.cuda.device_count()}')
+              if torch.cuda.is_available():
+                  for i in range(torch.cuda.device_count()):
+                      print(f'GPU {i}: {torch.cuda.get_device_name(i)}')
+              else:
+                  print('WARNING: CUDA not available with pip install')
+              "
               
+              # STEP 3: Setup conda environment but override PyTorch
+              echo "=== Setting up conda environment ==="
               conda init bash
               source ~/.bashrc
-
+              
+              # Check what's in environment.yml first
+              echo "=== Checking environment.yml contents ==="
+              cat environment.yml | grep -i pytorch || echo "No pytorch found in environment.yml"
+              cat environment.yml | grep -i torch || echo "No torch found in environment.yml"
+              
+              # Create the environment
               mamba env create -f environment.yml
               
+              # Activate and override PyTorch with CUDA version
+              eval "$(conda shell.bash hook)"
               conda activate cwdm
               
+              echo "=== Conda environment activated ==="
               conda info --envs
               python --version
+              which python
+              
+              # CRITICAL: Override any CPU-only PyTorch from environment.yml
+              echo "=== Overriding PyTorch with CUDA version in conda environment ==="
+              pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117
+              
+              # STEP 4: Final CUDA verification in conda environment
+              echo "=== Final CUDA verification (conda environment) ==="
+              python -c "
+              import torch
+              print(f'PyTorch version (conda final): {torch.__version__}')
+              print(f'CUDA available (conda final): {torch.cuda.is_available()}')
+              print(f'CUDA version (conda final): {torch.version.cuda}')
+              print(f'GPUs available (conda final): {torch.cuda.device_count()}')
+              if torch.cuda.is_available():
+                  for i in range(torch.cuda.device_count()):
+                      print(f'GPU {i}: {torch.cuda.get_device_name(i)}')
+                      print(f'GPU {i} memory: {torch.cuda.get_device_properties(i).total_memory / 1e9:.1f} GB')
+              else:
+                  print('ERROR: CUDA still not available after fixes!')
+                  exit(1)
+              "
+              
+              python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
 
               LOGDIR="/data/runs"
 
@@ -119,9 +172,14 @@ spec:
               echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
               echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
 
-              python -c "import torch; print(f'PyTorch version (conda): {torch.__version__}')"
-              python -c "import torch; print(f'CUDA available (conda): {torch.cuda.is_available()}')"
-              python -c "import torch; print(f'GPUs available (conda): {torch.cuda.device_count()}')"
+              # Final verification before starting training
+              echo "=== Starting training with CUDA verification ==="
+              python -c "
+              import torch
+              assert torch.cuda.is_available(), 'CUDA must be available for training'
+              assert torch.cuda.device_count() > 0, 'At least one GPU must be available'
+              print('✓ CUDA verification passed, starting training...')
+              "
 
               bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
               
