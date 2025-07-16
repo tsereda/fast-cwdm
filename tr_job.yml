@@ -139,7 +139,6 @@ spec:
               memory: 30Gi
               cpu: "18"
               nvidia.com/a100: "1"
-    
       volumes:
         - name: workspace
           emptyDir:
