@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: fast-cwdm-training
+  name: fast-fast-cwdm-training
   labels:
-    app: fast-cwdm
+    app: fast-fast-cwdm
 spec:
   backoffLimit: 0
   template:
@@ -57,6 +57,7 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
+              sudo mkdir /data/checkpoints/
               sudo chmod 777 /data/checkpoints/
 
               git clone https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
@@ -117,7 +118,7 @@ spec:
                   print(f'Device name: {torch.cuda.get_device_name(0)}')
               "
 
-              bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
+              bash run.sh --sampling-strategy sampled --timesteps 10 --mode train --train_modality all
               
               ls -la /data/checkpoints/
 
