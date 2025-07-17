@@ -57,6 +57,8 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
+              sudo chmod 777 /data/checkpoints/
+
               git clone https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
               cd ${REPO_PATH}
               
@@ -121,8 +123,7 @@ spec:
               echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
               echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
 
-              sudo mkdir /data/checkpoints/
-              sudo chmod 755 /data/checkpoints/
+
 
               bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
               
