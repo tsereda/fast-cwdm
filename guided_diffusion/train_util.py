@@ -1,6 +1,7 @@
 import copy
 import functools
 import os
+import glob
 
 import blobfile as bf
 import torch as th
@@ -55,7 +56,7 @@ class TrainLoop:
         summary_writer=None,
         mode='default',
         loss_level='image',
-        sample_schedule='direct',         # NEW: 'direct' or 'sampled'
+        sample_schedule='direct',
         diffusion_steps=1000,
     ):
         self.summary_writer = summary_writer
@@ -67,7 +68,6 @@ class TrainLoop:
         self.iterdatal = iter(data)
         self.batch_size = batch_size
         self.in_channels = in_channels
-        # No fast_ddpm_sampler or use_fast_ddpm attributes needed; rely on sample_schedule and diffusion_steps
         self.image_size = image_size
         self.contr = contr
         self.microbatch = microbatch if microbatch > 0 else batch_size
@@ -97,6 +97,16 @@ class TrainLoop:
         self.sync_cuda = th.cuda.is_available()
         self.sample_schedule = sample_schedule
         self.diffusion_steps = diffusion_steps
+        
+        # NEW: Track best loss and checkpoint for each modality
+        self.best_losses = {}  # Will store best loss for each modality
+        self.best_checkpoints = {}  # Will store path to best checkpoint for each modality
+        self.checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        # Load existing best losses if resuming
+        self._load_best_losses()
+        
         self._load_and_sync_parameters()
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         if self.resume_step:
@@ -106,7 +116,33 @@ class TrainLoop:
             logger.warn(
                 "Training requires CUDA. "
             )
-        # Fast-DDPM logic removed; now handled by sample_schedule and beta schedule
+
+    def _load_best_losses(self):
+        """Load best losses from file if it exists"""
+        best_losses_file = os.path.join(self.checkpoint_dir, 'best_losses.txt')
+        if os.path.exists(best_losses_file):
+            try:
+                with open(best_losses_file, 'r') as f:
+                    for line in f:
+                        if line.strip():
+                            modality, loss_str = line.strip().split(':')
+                            self.best_losses[modality] = float(loss_str)
+                print(f"Loaded best losses: {self.best_losses}")
+            except Exception as e:
+                print(f"Error loading best losses: {e}")
+                self.best_losses = {}
+        else:
+            self.best_losses = {}
+
+    def _save_best_losses(self):
+        """Save best losses to file"""
+        best_losses_file = os.path.join(self.checkpoint_dir, 'best_losses.txt')
+        try:
+            with open(best_losses_file, 'w') as f:
+                for modality, loss in self.best_losses.items():
+                    f.write(f"{modality}:{loss}\n")
+        except Exception as e:
+            print(f"Error saving best losses: {e}")
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -123,7 +159,6 @@ class TrainLoop:
                 )
 
         dist_util.sync_params(self.model.parameters())
-
 
     def _load_optimizer_state(self):
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -253,10 +288,10 @@ class TrainLoop:
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
 
-            # --- Saving ---
+            # --- Saving (MODIFIED: Only save if best loss) ---
             if self.step % self.save_interval == 0:
                 save_start = time.time()
-                self.save()
+                self.save_if_best(lossmse.item())
                 save_end = time.time()
                 total_save_time += save_end - save_start
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
@@ -275,7 +310,56 @@ class TrainLoop:
 
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
-            self.save()
+            self.save_if_best(lossmse.item())
+
+    def save_if_best(self, current_loss):
+        """Only save checkpoint if current loss is better than previous best"""
+        modality = self.contr
+        
+        # Check if this is the best loss so far
+        is_best = False
+        if modality not in self.best_losses or current_loss < self.best_losses[modality]:
+            is_best = True
+            self.best_losses[modality] = current_loss
+            
+        if is_best and dist.get_rank() == 0:
+            print(f"🎯 NEW BEST for {modality}! Loss: {current_loss:.6f}")
+            
+            # Remove old best checkpoint if it exists
+            if modality in self.best_checkpoints:
+                old_checkpoint = self.best_checkpoints[modality]
+                if os.path.exists(old_checkpoint):
+                    try:
+                        os.remove(old_checkpoint)
+                        print(f"Removed old checkpoint: {old_checkpoint}")
+                    except Exception as e:
+                        print(f"Error removing old checkpoint: {e}")
+            
+            # Save new best checkpoint
+            filename = f"brats_{modality}_BEST_{self.sample_schedule}_{self.diffusion_steps}.pt"
+            full_save_path = os.path.join(self.checkpoint_dir, filename)
+            
+            try:
+                with bf.BlobFile(full_save_path, "wb") as f:
+                    th.save(self.model.state_dict(), f)
+                
+                self.best_checkpoints[modality] = full_save_path
+                print(f"✅ Saved new best checkpoint: {full_save_path}")
+                
+                # Save best losses to file
+                self._save_best_losses()
+                
+                # Save optimizer state only for current best
+                opt_save_path = os.path.join(self.checkpoint_dir, f"opt_best_{modality}.pt")
+                with bf.BlobFile(opt_save_path, "wb") as f:
+                    th.save(self.opt.state_dict(), f)
+                print(f"💾 Saved optimizer state: {opt_save_path}")
+                
+            except Exception as e:
+                print(f"❌ Error saving checkpoint: {e}")
+        else:
+            if not is_best:
+                print(f"Loss {current_loss:.6f} not better than best {self.best_losses.get(modality, float('inf')):.6f} for {modality}")
 
     def run_step(self, batch, cond, label=None, info=dict()):
         lossmse, sample, sample_idwt = self.forward_backward(batch, cond, label)
@@ -320,8 +404,6 @@ class TrainLoop:
 
         # Sample timesteps
         t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
-        # If your diffusion object has a custom timestep_map, handle it inside schedule_sampler or diffusion
-        #print(f"[DEBUG] Timesteps (local indices): {t.tolist()}")
 
         compute_losses = functools.partial(
             self.diffusion.training_losses,
@@ -392,6 +474,8 @@ class TrainLoop:
         logger.logkv("samples", (self.step + self.resume_step + 1) * self.global_batch)
 
     def save(self):
+        """Legacy save method - kept for compatibility but prints warning"""
+        print("⚠️  Warning: Using legacy save(). Consider using save_if_best() instead.")
         def save_checkpoint(rate, state_dict):
             if dist.get_rank() == 0:
                 logger.log("Saving model...")

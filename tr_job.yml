@@ -57,6 +57,7 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
+              sudo rm -r /data/checkpoints/
               sudo mkdir /data/checkpoints/
               sudo chmod 777 /data/checkpoints/
 
