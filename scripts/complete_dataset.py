@@ -302,66 +302,110 @@ class DiffusionSynthesizer:
         """Synthesize the missing modality using the trained model"""
         logger.info(f"Synthesizing {missing_modality}...")
         
-        # Create model and diffusion
-        args = CheckpointManager.create_args_from_checkpoint(model_path)
-        model, diffusion = create_model_and_diffusion(
-            **args_to_dict(args, model_and_diffusion_defaults().keys())
-        )
-        diffusion.mode = 'i2i'
-        
-        # Load model weights
-        logger.info(f"Loading model from: {model_path}")
-        state_dict = dist_util.load_state_dict(str(model_path), map_location="cpu")
-        model.load_state_dict(state_dict)
-        model.to(self.device)
-        model.eval()
-        
-        # Prepare conditioning
-        cond = self._prepare_conditioning(available_modalities, missing_modality)
-        
-        # Generate and sample
-        noise = th.randn(1, 8, 112, 112, 80, device=self.device)
-        
-        with th.no_grad():
-            logger.info(f"Running {diffusion.num_timesteps}-step sampling...")
-            sample = diffusion.p_sample_loop(
-                model=model,
-                shape=noise.shape,
-                noise=noise,
-                cond=cond,
-                clip_denoised=True,
-                model_kwargs={}
+        try:
+            # Create model and diffusion
+            args = CheckpointManager.create_args_from_checkpoint(model_path)
+            model, diffusion = create_model_and_diffusion(
+                **args_to_dict(args, model_and_diffusion_defaults().keys())
             )
-        
-        # Convert back to spatial domain
-        sample = self._convert_to_spatial_domain(sample)
-        
-        # Post-process
-        sample = self._post_process_sample(sample, available_modalities)
-        
-        return sample
+            diffusion.mode = 'i2i'
+            
+            # Load model weights
+            logger.info(f"Loading model from: {model_path}")
+            state_dict = dist_util.load_state_dict(str(model_path), map_location="cpu")
+            model.load_state_dict(state_dict)
+            model.to(self.device)
+            model.eval()
+            
+            # Prepare conditioning with validation
+            cond = self._prepare_conditioning(available_modalities, missing_modality)
+            logger.debug(f"Conditioning tensor shape: {cond.shape}")
+            
+            # Generate noise with validation
+            noise = th.randn(1, 8, 112, 112, 80, device=self.device)
+            logger.debug(f"Noise tensor shape: {noise.shape}")
+            
+            # Validate tensor shapes before sampling
+            self._validate_tensor_shapes(noise, cond)
+            
+            # Create a wrapped model for better error handling
+            wrapped_model = self._create_wrapped_model(model)
+            
+            with th.no_grad():
+                logger.info(f"Running {diffusion.num_timesteps}-step sampling...")
+                sample = diffusion.p_sample_loop(
+                    model=wrapped_model,
+                    shape=noise.shape,
+                    noise=noise,
+                    cond=cond,
+                    clip_denoised=True,
+                    model_kwargs={}
+                )
+            
+            # Convert back to spatial domain
+            sample = self._convert_to_spatial_domain(sample)
+            
+            # Post-process
+            sample = self._post_process_sample(sample, available_modalities)
+            
+            return sample
+            
+        except RuntimeError as e:
+            if "device-side assert" in str(e):
+                logger.error("CUDA device-side assert triggered. This usually indicates tensor shape mismatch.")
+                logger.error("Try running with CUDA_LAUNCH_BLOCKING=1 for better debugging.")
+                self._debug_tensor_shapes(available_modalities, missing_modality)
+            raise
     
     def _prepare_conditioning(self, available_modalities: Dict[str, Tensor], missing_modality: str) -> Tensor:
         """Prepare conditioning vector from available modalities"""
         # Get available modalities in consistent order
         available_order = [m for m in MODALITIES if m != missing_modality]
+        logger.debug(f"Available modalities in order: {available_order}")
         
         # Move tensors to device and ensure 5D shape
         cond_tensors = []
         for modality in available_order:
             tensor = available_modalities[modality].to(self.device)
+            logger.debug(f"Processing {modality}: original shape {tensor.shape}")
+            
             if tensor.dim() == 4:
                 tensor = tensor.unsqueeze(1)  # Add channel dimension
+                logger.debug(f"  After unsqueeze: {tensor.shape}")
+            
+            # Validate tensor
+            if tensor.shape != (1, 1, 224, 224, 155):
+                logger.warning(f"Unexpected tensor shape for {modality}: {tensor.shape}")
+            
             cond_tensors.append(tensor)
+        
+        logger.debug(f"Conditioning tensor shapes: {[t.shape for t in cond_tensors]}")
         
         # Create conditioning vector using DWT
         cond_list = []
-        for tensor in cond_tensors:
-            LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = self.dwt(tensor)
-            modality_cond = th.cat([LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
-            cond_list.append(modality_cond)
+        for i, tensor in enumerate(cond_tensors):
+            try:
+                logger.debug(f"Processing DWT for tensor {i}: {tensor.shape}")
+                LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = self.dwt(tensor)
+                logger.debug(f"  DWT components shapes: LLL={LLL.shape}")
+                
+                modality_cond = th.cat([LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
+                logger.debug(f"  Concatenated shape: {modality_cond.shape}")
+                cond_list.append(modality_cond)
+                
+            except Exception as e:
+                logger.error(f"Error in DWT processing for tensor {i}: {e}")
+                raise
         
-        return th.cat(cond_list, dim=1)
+        final_cond = th.cat(cond_list, dim=1)
+        logger.debug(f"Final conditioning tensor shape: {final_cond.shape}")
+        
+        # Expected shape should be [1, 24, 112, 112, 80] for 3 modalities (3 * 8 channels)
+        expected_channels = len(available_order) * 8
+        if final_cond.shape[1] != expected_channels:
+            logger.warning(f"Unexpected conditioning channels: {final_cond.shape[1]}, expected {expected_channels}")
+        
+        return final_cond
     
     def _convert_to_spatial_domain(self, sample: Tensor) -> Tensor:
         """Convert sample from wavelet domain to spatial domain"""
@@ -409,6 +453,7 @@ class CaseProcessor:
     
     def process_case(self, case_dir: Path, output_dir: Path) -> bool:
         """Process a single case by synthesizing the missing modality"""
+        case_name = None
         try:
             # Get case name and missing modality
             case_name = ModalityDetector.get_case_name_from_files(case_dir)
@@ -428,6 +473,11 @@ class CaseProcessor:
                 case_dir, case_name, missing_modality
             )
             
+            # Validate loaded modalities
+            if not available_modalities:
+                logger.error(f"No available modalities found for {case_name}")
+                return False
+            
             # Find and load model
             model_path = CheckpointManager.find_model_checkpoint(
                 missing_modality, self.checkpoint_dir
@@ -444,8 +494,19 @@ class CaseProcessor:
             logger.info(f"Successfully processed {case_name}")
             return True
             
+        except FileNotFoundError as e:
+            logger.error(f"File not found for {case_name or case_dir.name}: {e}")
+            return False
+        except RuntimeError as e:
+            if "CUDA" in str(e) and "assert" in str(e):
+                logger.error(f"CUDA error for {case_name or case_dir.name}: {e}")
+                logger.error("This is likely a tensor shape mismatch. Check the logs above for details.")
+                logger.error("Try running with CUDA_LAUNCH_BLOCKING=1 for better debugging.")
+            else:
+                logger.error(f"Runtime error for {case_name or case_dir.name}: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error processing {case_dir.name}: {e}")
+            logger.error(f"Unexpected error processing {case_name or case_dir.name}: {e}")
             logger.debug(traceback.format_exc())
             return False
     
@@ -590,6 +651,11 @@ def create_argument_parser() -> argparse.ArgumentParser:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level"
     )
+    parser.add_argument(
+        "--debug_cuda",
+        action="store_true",
+        help="Enable CUDA debugging (sets CUDA_LAUNCH_BLOCKING=1)"
+    )
     
     return parser
 
@@ -601,6 +667,11 @@ def main():
     
     # Set logging level
     logging.getLogger().setLevel(getattr(logging, args.log_level))
+    
+    # Enable CUDA debugging if requested
+    if args.debug_cuda:
+        os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+        logger.info("CUDA debugging enabled (CUDA_LAUNCH_BLOCKING=1)")
     
     try:
         # Setup environment
