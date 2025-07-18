@@ -153,10 +153,10 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
     )
     diffusion.mode = 'i2i'
 
-    # Move model to device before loading weights to avoid device-side assert errors
+    # Load model weights on CPU first, then move to CUDA (prevents device-side assert)
     print(f"Loading model from: {model_path}")
+    model.load_state_dict(dist_util.load_state_dict(model_path, map_location="cpu"))
     model.to(device)
-    model.load_state_dict(dist_util.load_state_dict(model_path, map_location=device))
     model.eval()
 
     # Setup wavelet transforms
