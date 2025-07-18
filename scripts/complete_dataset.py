@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple medical image synthesis script - debug version
-Fixes tensor shape mismatches and makes debugging easier
+Simple medical image synthesis script - fixes tensor shape issues
 """
 
 import argparse
@@ -41,7 +40,9 @@ def load_image(file_path):
     # Convert to tensor and preprocess like training
     img_tensor = th.zeros(1, 240, 240, 160)
     img_tensor[:, :, :, :155] = th.tensor(img_normalized)
-    img_tensor = img_tensor[:, 8:-8, 8:-8, :155]  # Crop to 224x224x155
+    
+    # CRITICAL FIX: Crop to 224x224x155 (not 160!)
+    img_tensor = img_tensor[:, 8:-8, 8:-8, :155]
     
     print(f"  Preprocessed shape: {img_tensor.shape}")
     return img_tensor.float()
@@ -79,7 +80,7 @@ def find_checkpoint(missing_modality, checkpoint_dir):
     best_files = glob.glob(os.path.join(checkpoint_dir, pattern))
     
     if best_files:
-        checkpoint = best_files[0]  # Take first BEST checkpoint
+        checkpoint = best_files[0]
         print(f"Found BEST checkpoint: {checkpoint}")
         return checkpoint
     
@@ -195,13 +196,14 @@ def prepare_conditioning(available_modalities, missing_modality, device):
         if tensor.dim() == 4:
             tensor = tensor.unsqueeze(1)  # [B, 1, D, H, W]
         
-        print(f"  {modality} tensor shape: {tensor.shape}")
+        print(f"  {modality} input shape: {tensor.shape}")
         
         # Apply DWT
         dwt_components = dwt(tensor)
-        print(f"  {modality} DWT components: {[c.shape for c in dwt_components]}")
+        shapes = [c.shape for c in dwt_components]
+        print(f"  {modality} DWT shapes: {shapes}")
         
-        # Fix dimension mismatches by cropping to minimum size
+        # Find minimum z-dimension to fix mismatches
         min_z = min(c.shape[-1] for c in dwt_components)
         print(f"  {modality} min z-dimension: {min_z}")
         
@@ -220,7 +222,7 @@ def prepare_conditioning(available_modalities, missing_modality, device):
         
         # Concatenate DWT components
         modality_cond = th.cat(cropped_components, dim=1)
-        print(f"  {modality} conditioning shape: {modality_cond.shape}")
+        print(f"  {modality} final conditioning: {modality_cond.shape}")
         cond_list.append(modality_cond)
     
     # Concatenate all modalities
@@ -308,9 +310,6 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
         spatial_sample = spatial_sample.squeeze(1)  # Remove channel
     spatial_sample = spatial_sample[0]  # Remove batch
     
-    # Crop to original 155 slices
-    spatial_sample = spatial_sample[:, :, :155]
-    
     print(f"Final output shape: {spatial_sample.shape}")
     return spatial_sample
 
@@ -345,7 +344,7 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
         
         # Pad back to 240x240x155 (reverse the 8-pixel crop)
         padded = np.zeros((240, 240, 155))
-        padded[8:232, 8:232, :155] = synthesized_np
+        padded[8:232, 8:232, :synthesized_np.shape[2]] = synthesized_np
         
         # Create NIfTI image
         synthesized_img = nib.Nifti1Image(padded, reference_img.affine, reference_img.header)
@@ -354,7 +353,7 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
         synthesized_img = nib.Nifti1Image(synthesized_np, np.eye(4))
     
     nib.save(synthesized_img, output_path)
-    print(f"Saved: {output_path}")
+    print(f"✅ Saved: {output_path}")
 
 
 def process_case(case_dir, output_dir, checkpoint_dir, device):
