@@ -273,6 +273,7 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
             cond=cond,
             clip_denoised=True,
             model_kwargs={}
+            time=diffusion.num_timesteps
         )
     
     print(f"Sample shape: {sample.shape}")
