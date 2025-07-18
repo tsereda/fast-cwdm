@@ -263,18 +263,30 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
-    
+
+    # Print model device and dtype
+    first_param = next(model.parameters())
+    print(f"Model device: {first_param.device}, dtype: {first_param.dtype}")
+
     # Prepare conditioning
     cond = prepare_conditioning(available_modalities, missing_modality, device)
-    
+
+    # Check cond device, dtype, NaN/Inf
+    print(f"Cond device: {cond.device}, dtype: {cond.dtype}")
+    print(f"Cond has NaN: {th.isnan(cond).any().item()}, Inf: {th.isinf(cond).any().item()}")
+
     # Create noise tensor with matching dimensions
     _, _, cond_d, cond_h, cond_w = cond.shape
     noise_shape = (1, 8, cond_d, cond_h, cond_w)
     noise = th.randn(*noise_shape, device=device)
-    
+
+    # Check noise device, dtype, NaN/Inf
+    print(f"Noise device: {noise.device}, dtype: {noise.dtype}")
+    print(f"Noise has NaN: {th.isnan(noise).any().item()}, Inf: {th.isinf(noise).any().item()}")
+
     print(f"Noise shape: {noise.shape}")
     print(f"Conditioning shape: {cond.shape}")
-    
+
     # Sample
     print(f"Running {diffusion.num_timesteps}-step sampling...")
     with th.no_grad():
@@ -286,7 +298,7 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
             clip_denoised=True,
             model_kwargs={}
         )
-    
+
     print(f"Sample shape: {sample.shape}")
     
     # Convert back to spatial domain using IDWT
