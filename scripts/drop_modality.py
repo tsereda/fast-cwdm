@@ -10,8 +10,8 @@ import shutil
 
 def create_pseudo_validation():
     # Paths for your project structure
-    val_set_folder = './datasets/BRATS2023/validation'
-    val_set_missing = './datasets/BRATS2023/pseudo_validation'
+    val_set_folder = 'ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData'
+    val_set_missing = 'pseudo_validation'
     
     if not os.path.exists(val_set_missing):
         os.makedirs(val_set_missing)
