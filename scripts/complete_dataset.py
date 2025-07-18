@@ -48,28 +48,39 @@ def load_image(file_path):
     return img_tensor.float()
 
 
+def get_case_prefix(case_dir):
+    """Detect the file prefix for the case by inspecting the filenames in the directory."""
+    for filename in os.listdir(case_dir):
+        if filename.endswith('.nii.gz'):
+            # Remove modality and extension
+            for modality in MODALITIES:
+                if filename.endswith(f"-{modality}.nii.gz"):
+                    return filename[:-(len(f"-{modality}.nii.gz"))]
+    return None
+
 def find_missing_modality(case_dir):
-    """Find which modality is missing."""
-    case_name = os.path.basename(case_dir)
-    
+    """Find which modality is missing, using detected file prefix."""
+    case_prefix = get_case_prefix(case_dir)
+    if not case_prefix:
+        print(f"Could not determine case prefix in {case_dir}")
+        return None
     for modality in MODALITIES:
-        file_path = os.path.join(case_dir, f"{case_name}-{modality}.nii.gz")
+        file_path = os.path.join(case_dir, f"{case_prefix}-{modality}.nii.gz")
         if not os.path.exists(file_path):
             return modality
-    
     return None
 
 
 def load_available_modalities(case_dir, missing_modality):
-    """Load all available modalities."""
-    case_name = os.path.basename(case_dir)
+    """Load all available modalities using detected file prefix."""
+    case_prefix = get_case_prefix(case_dir)
+    if not case_prefix:
+        raise RuntimeError(f"Could not determine case prefix in {case_dir}")
     available = [m for m in MODALITIES if m != missing_modality]
-    
     modalities = {}
     for modality in available:
-        file_path = os.path.join(case_dir, f"{case_name}-{modality}.nii.gz")
+        file_path = os.path.join(case_dir, f"{case_prefix}-{modality}.nii.gz")
         modalities[modality] = load_image(file_path)
-    
     return modalities
 
 
@@ -315,43 +326,35 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
 
 
 def save_result(synthesized, case_dir, missing_modality, output_dir):
-    """Save the synthesized modality."""
+    """Save the synthesized modality using detected file prefix."""
+    case_prefix = get_case_prefix(case_dir)
     case_name = os.path.basename(case_dir)
-    
     # Create output directory
     output_case_dir = os.path.join(output_dir, case_name)
     os.makedirs(output_case_dir, exist_ok=True)
-    
     # Copy existing files
     for filename in os.listdir(case_dir):
         if filename.endswith('.nii.gz'):
             src = os.path.join(case_dir, filename)
             dst = os.path.join(output_case_dir, filename)
             nib.save(nib.load(src), dst)
-    
     # Save synthesized modality
-    output_path = os.path.join(output_case_dir, f"{case_name}-{missing_modality}.nii.gz")
-    
+    output_path = os.path.join(output_case_dir, f"{case_prefix}-{missing_modality}.nii.gz")
     # Get reference for header/affine
     reference_files = [f for f in os.listdir(case_dir) 
                       if f.endswith('.nii.gz') and any(m in f for m in MODALITIES)]
-    
     if reference_files:
         reference_img = nib.load(os.path.join(case_dir, reference_files[0]))
-        
         # Convert to numpy and pad back to original size
         synthesized_np = synthesized.detach().cpu().numpy()
-        
         # Pad back to 240x240x155 (reverse the 8-pixel crop)
         padded = np.zeros((240, 240, 155))
         padded[8:232, 8:232, :synthesized_np.shape[2]] = synthesized_np
-        
         # Create NIfTI image
         synthesized_img = nib.Nifti1Image(padded, reference_img.affine, reference_img.header)
     else:
         synthesized_np = synthesized.detach().cpu().numpy()
         synthesized_img = nib.Nifti1Image(synthesized_np, np.eye(4))
-    
     nib.save(synthesized_img, output_path)
     print(f"✅ Saved: {output_path}")
 
