@@ -1,94 +1,3 @@
-def parse_checkpoint_parameters(model_path):
-    """
-    Parse checkpoint filename to extract sample_schedule and diffusion_steps.
-    Updated to handle BEST pattern: brats_t1n_BEST_direct_1000.pt
-    """
-    import os
-    basename = os.path.basename(model_path)
-    parts = basename.split('_')
-    # Default values
-    sample_schedule = 'direct'
-    diffusion_steps = 1000
-    # Handle BEST pattern: brats_t1n_BEST_direct_1000.pt
-    if "_BEST_" in basename:
-        try:
-            if len(parts) >= 4:
-                sample_schedule = parts[3]  # 'direct'
-            if len(parts) >= 5:
-                steps_str = parts[4].split('.')[0]  # '1000'
-                diffusion_steps = int(steps_str)
-        except (ValueError, IndexError):
-            pass
-    # Handle regular pattern: brats_t1n_010000_direct_1000.pt
-    elif len(parts) >= 5:
-        try:
-            sample_schedule = parts[3]
-            steps_str = parts[4].split('.')[0]
-            diffusion_steps = int(steps_str)
-        except (ValueError, IndexError):
-            pass
-    elif len(parts) >= 4:
-        try:
-            sample_schedule = parts[3].split('.')[0]
-            if sample_schedule.isdigit():
-                diffusion_steps = int(sample_schedule)
-                sample_schedule = 'direct'
-        except (ValueError, IndexError):
-            pass
-    print(f"[CHECKPOINT] Parsed {basename} → schedule={sample_schedule}, steps={diffusion_steps}")
-    return {'sample_schedule': sample_schedule, 'diffusion_steps': diffusion_steps}
-
-def create_args_from_checkpoint(model_path):
-    """
-    Create an Args object for model creation, using parameters parsed from checkpoint filename.
-    """
-    params = parse_checkpoint_parameters(model_path)
-    class Args:
-        pass
-    args = Args()
-    defaults = model_and_diffusion_defaults()
-    # Set defaults
-    args.image_size = 224
-    args.num_channels = 64
-    args.num_res_blocks = 2
-    args.channel_mult = "1,2,2,4,4"
-    args.learn_sigma = False
-    args.class_cond = False
-    args.use_checkpoint = False
-    args.attention_resolutions = ""
-    args.num_heads = 1
-    args.num_head_channels = -1
-    args.num_heads_upsample = -1
-    args.use_scale_shift_norm = False
-    args.dropout = 0.0
-    args.resblock_updown = True
-    args.use_fp16 = False
-    args.use_new_attention_order = False
-    args.dims = 3
-    args.num_groups = 32
-    args.in_channels = 32  # 8 + 8*3 for conditioning
-    args.out_channels = 8
-    args.bottleneck_attention = False
-    args.resample_2d = False
-    args.additive_skips = False
-    args.use_freq = False
-    args.predict_xstart = True
-    args.noise_schedule = "linear"
-    args.timestep_respacing = ""
-    args.use_kl = False
-    args.rescale_timesteps = False
-    args.rescale_learned_sigmas = False
-    args.mode = 'i2i'
-    args.dataset = "brats"
-    # Set from checkpoint
-    args.sample_schedule = params['sample_schedule']
-    args.diffusion_steps = params['diffusion_steps']
-    return args
-"""
-Complete missing modalities in pseudo-validation dataset.
-This is the core script that bridges synthesis and segmentation evaluation.
-"""
-
 import argparse
 import nibabel as nib
 import numpy as np
@@ -120,11 +29,22 @@ def detect_missing_modality(case_dir):
             return modality
     
     # Fallback: check which modality file is missing
-    case_name = os.path.basename(case_dir)
+    # Get the actual case name from an existing file to avoid issues with parent directory names
+    actual_case_name = None
+    for f in os.listdir(case_dir):
+        if f.endswith('.nii.gz'):
+            # Example: BraTS-GLI-00721-000-t1c.nii.gz -> BraTS-GLI-00721-000
+            actual_case_name = "-".join(f.split('-')[:-1]) 
+            break
+    
+    if actual_case_name is None:
+        print(f"Warning: Could not determine actual case name in {case_dir}")
+        return None
+
     missing_modalities = []
     
     for modality in modalities:
-        expected_file = os.path.join(case_dir, f"{case_name}-{modality}.nii.gz")
+        expected_file = os.path.join(case_dir, f"{actual_case_name}-{modality}.nii.gz")
         if not os.path.exists(expected_file):
             missing_modalities.append(modality)
     
@@ -138,7 +58,7 @@ def detect_missing_modality(case_dir):
         return missing_modalities[0]  # Take the first one
 
 
-def load_modalities(case_dir, case_name, missing_modality):
+def load_modalities(case_dir, actual_case_name, missing_modality): # Changed case_name to actual_case_name
     """Load the available modalities for conditioning."""
     modalities = ['t1n', 't1c', 't2w', 't2f']
     available_modalities = [m for m in modalities if m != missing_modality]
@@ -146,7 +66,7 @@ def load_modalities(case_dir, case_name, missing_modality):
     loaded_modalities = {}
     
     for modality in available_modalities:
-        file_path = os.path.join(case_dir, f"{case_name}-{modality}.nii.gz")
+        file_path = os.path.join(case_dir, f"{actual_case_name}-{modality}.nii.gz") # Use actual_case_name
         if os.path.exists(file_path):
             # Load and preprocess like in BRATSVolumes
             img = nib.load(file_path).get_fdata()
@@ -214,7 +134,7 @@ def find_model_checkpoint(missing_modality, checkpoint_dir="./checkpoints"):
     selected_checkpoint = checkpoint_info[0][1]
     iter_num, schedule, steps = checkpoint_info[0][0]
     print(f"Selected checkpoint for {missing_modality}: {selected_checkpoint}")
-    print(f"  Schedule: {schedule}, Steps: {steps}, Iteration: {iter_num}")
+    print(f"    Schedule: {schedule}, Steps: {steps}, Iteration: {iter_num}")
     return selected_checkpoint
 
 
@@ -357,21 +277,118 @@ def create_default_args():
     return args
 
 
+def parse_checkpoint_parameters(model_path):
+    """
+    Parse checkpoint filename to extract sample_schedule and diffusion_steps.
+    Updated to handle BEST pattern: brats_t1n_BEST_direct_1000.pt
+    """
+    import os
+    basename = os.path.basename(model_path)
+    parts = basename.split('_')
+    # Default values
+    sample_schedule = 'direct'
+    diffusion_steps = 1000
+    # Handle BEST pattern: brats_t1n_BEST_direct_1000.pt
+    if "_BEST_" in basename:
+        try:
+            if len(parts) >= 4:
+                sample_schedule = parts[3]  # 'direct'
+            if len(parts) >= 5:
+                steps_str = parts[4].split('.')[0]  # '1000'
+                diffusion_steps = int(steps_str)
+        except (ValueError, IndexError):
+            pass
+    # Handle regular pattern: brats_t1n_010000_direct_1000.pt
+    elif len(parts) >= 5:
+        try:
+            sample_schedule = parts[3]
+            steps_str = parts[4].split('.')[0]
+            diffusion_steps = int(steps_str)
+        except (ValueError, IndexError):
+            pass
+    elif len(parts) >= 4:
+        try:
+            sample_schedule = parts[3].split('.')[0]
+            if sample_schedule.isdigit():
+                diffusion_steps = int(sample_schedule)
+                sample_schedule = 'direct'
+        except (ValueError, IndexError):
+            pass
+    print(f"[CHECKPOINT] Parsed {basename} → schedule={sample_schedule}, steps={diffusion_steps}")
+    return {'sample_schedule': sample_schedule, 'diffusion_steps': diffusion_steps}
+
+def create_args_from_checkpoint(model_path):
+    """
+    Create an Args object for model creation, using parameters parsed from checkpoint filename.
+    """
+    params = parse_checkpoint_parameters(model_path)
+    class Args:
+        pass
+    args = Args()
+    defaults = model_and_diffusion_defaults()
+    # Set defaults
+    args.image_size = 224
+    args.num_channels = 64
+    args.num_res_blocks = 2
+    args.channel_mult = "1,2,2,4,4"
+    args.learn_sigma = False
+    args.class_cond = False
+    args.use_checkpoint = False
+    args.attention_resolutions = ""
+    args.num_heads = 1
+    args.num_head_channels = -1
+    args.num_heads_upsample = -1
+    args.use_scale_shift_norm = False
+    args.dropout = 0.0
+    args.resblock_updown = True
+    args.use_fp16 = False
+    args.use_new_attention_order = False
+    args.dims = 3
+    args.num_groups = 32
+    args.in_channels = 32  # 8 + 8*3 for conditioning
+    args.out_channels = 8
+    args.bottleneck_attention = False
+    args.resample_2d = False
+    args.additive_skips = False
+    args.use_freq = False
+    args.predict_xstart = True
+    args.noise_schedule = "linear"
+    args.timestep_respacing = ""
+    args.use_kl = False
+    args.rescale_timesteps = False
+    args.rescale_learned_sigmas = False
+    args.mode = 'i2i'
+    args.dataset = "brats"
+    # Set from checkpoint
+    args.sample_schedule = params['sample_schedule']
+    args.diffusion_steps = params['diffusion_steps']
+    return args
+
 def complete_case(case_dir, output_dir, device):
     """Complete a single case by synthesizing the missing modality."""
-    case_name = os.path.basename(case_dir)
-    
+    # First, try to determine the actual case name (e.g., BraTS-GLI-00721-000)
+    # by looking at the files present, not the parent directory name.
+    actual_case_name = None
+    for f in os.listdir(case_dir):
+        if f.endswith('.nii.gz'):
+            actual_case_name = "-".join(f.split('-')[:-1])
+            break
+            
+    if actual_case_name is None:
+        print(f"Skipping {os.path.basename(case_dir)}: Could not determine actual case name from files.")
+        return False
+
     # Detect missing modality
     missing_modality = detect_missing_modality(case_dir)
     if missing_modality is None:
-        print(f"Skipping {case_name}: No missing modality detected")
+        print(f"Skipping {actual_case_name}: No missing modality detected")
         return False
     
-    print(f"Processing {case_name}: missing {missing_modality}")
+    print(f"Processing {actual_case_name}: missing {missing_modality}")
     
     try:
         # Load available modalities
-        available_modalities = load_modalities(case_dir, case_name, missing_modality)
+        available_modalities = load_modalities(case_dir, actual_case_name, missing_modality) # Pass actual_case_name
         
         # Find model checkpoint
         model_path = find_model_checkpoint(missing_modality)
@@ -379,8 +396,8 @@ def complete_case(case_dir, output_dir, device):
         # Synthesize missing modality
         synthesized = synthesize_missing_modality(available_modalities, missing_modality, model_path, device)
         
-        # Create output directory
-        output_case_dir = os.path.join(output_dir, case_name)
+        # Create output directory for the actual case name
+        output_case_dir = os.path.join(output_dir, actual_case_name)
         os.makedirs(output_case_dir, exist_ok=True)
         
         # Copy existing modalities
@@ -391,11 +408,12 @@ def complete_case(case_dir, output_dir, device):
                 nib.save(nib.load(src_file), dst_file)
         
         # Save synthesized modality
-        synthesized_path = os.path.join(output_case_dir, f"{case_name}-{missing_modality}.nii.gz")
+        synthesized_path = os.path.join(output_case_dir, f"{actual_case_name}-{missing_modality}.nii.gz")
         synthesized_np = synthesized.detach().cpu().numpy()[0]  # Remove batch dimension
         
         # Get reference image for proper header/affine
-        reference_files = [f for f in os.listdir(case_dir) if f.endswith('.nii.gz') and 't1n' in f or 't1c' in f or 't2w' in f or 't2f' in f]
+        reference_files = [f for f in os.listdir(case_dir) if f.endswith('.nii.gz') and 
+                           any(mod in f for mod in ['t1n', 't1c', 't2w', 't2f'])]
         if reference_files:
             reference_img = nib.load(os.path.join(case_dir, reference_files[0]))
             
@@ -404,7 +422,10 @@ def complete_case(case_dir, output_dir, device):
             if synthesized_np.shape != original_shape:
                 # Pad the synthesized image to match original dimensions
                 padded = np.zeros(original_shape)
-                padded[8:232, 8:232, :155] = synthesized_np  # Reverse the cropping
+                # Assuming 8-pixel crop on each side for x and y, and 5-slice padding for z (160 -> 155)
+                # The crop in BRATSVolumes is 8:-8 for x and y. So, add 8 back to each side.
+                # The z-axis is cropped from 160 to 155, so we need to put it back into the first 155 slices.
+                padded[8:8+synthesized_np.shape[0], 8:8+synthesized_np.shape[1], :synthesized_np.shape[2]] = synthesized_np
                 synthesized_np = padded
             
             synthesized_img = nib.Nifti1Image(synthesized_np, reference_img.affine, reference_img.header)
@@ -418,7 +439,7 @@ def complete_case(case_dir, output_dir, device):
         
     except Exception as e:
         import traceback
-        print(f"Error processing {case_name}: {e}")
+        print(f"Error processing {actual_case_name}: {e}")
         traceback.print_exc()
         return False
 
@@ -427,11 +448,11 @@ def main():
     """Main function to complete all cases in pseudo-validation dataset."""
     parser = argparse.ArgumentParser(description="Complete missing modalities in pseudo-validation dataset")
     parser.add_argument("--input_dir", default="./datasets/BRATS2023/pseudo_validation", 
-                       help="Directory containing pseudo-validation data with missing modalities")
+                        help="Directory containing pseudo-validation data with missing modalities")
     parser.add_argument("--output_dir", default="./datasets/BRATS2023/pseudo_validation_completed",
-                       help="Output directory for completed dataset")
+                        help="Output directory for completed dataset")
     parser.add_argument("--checkpoint_dir", default="/data/checkpoints",
-                       help="Directory containing trained model checkpoints")
+                        help="Directory containing trained model checkpoints")
     parser.add_argument("--device", default="cuda:0", help="Device to run inference on")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--max_cases", type=int, default=None, help="Maximum number of cases to process (for debugging)")
@@ -450,10 +471,32 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Process all cases
-    case_dirs = [d for d in os.listdir(args.input_dir) 
-                if os.path.isdir(os.path.join(args.input_dir, d))]
-    case_dirs.sort()
+    # The `input_dir` itself might be the "ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData" directory
+    # or it might contain multiple such directories.
+    # We need to iterate through the actual patient directories within `input_dir`.
+    
+    # Let's assume input_dir points to the parent of patient directories.
+    # Example: input_dir = ./datasets/BRATS2023/pseudo_validation
+    # and patient data is in ./datasets/BRATS2023/pseudo_validation/BraTS-GLI-XXXXX-YYY
+    
+    # If `input_dir` directly contains patient folders like `BraTS-GLI-00721-000`, 
+    # then `case_dirs` should be `[d for d in os.listdir(args.input_dir) if os.path.isdir(os.path.join(args.input_dir, d))]`
+    # as currently written in the script.
+    
+    # However, your example output shows:
+    # `Warning: Multiple missing modalities in ./datasets/BRATS2023/pseudo_validation/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData: ['t1n', 't1c', 't2w', 't2f']`
+    # This suggests that `input_dir` might be `pseudo_validation` and `ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData` is treated as a case.
+    # We need to ensure that `case_dir` inside the loop refers to the *individual patient folder*.
 
+    # Revised logic to find actual patient case directories
+    all_potential_case_dirs = []
+    for root, dirs, files in os.walk(args.input_dir):
+        # Look for directories that contain NIfTI files that follow the BraTS naming convention
+        if any(f.endswith('.nii.gz') and f.startswith('BraTS-GLI-') for f in files):
+            all_potential_case_dirs.append(root)
+
+    case_dirs = sorted(list(set(all_potential_case_dirs))) # Ensure unique and sorted
+    
     if args.max_cases is not None:
         case_dirs = case_dirs[:args.max_cases]
 
@@ -462,8 +505,7 @@ def main():
     successful = 0
     failed = 0
 
-    for case_dir_name in case_dirs:
-        case_dir = os.path.join(args.input_dir, case_dir_name)
+    for case_dir in case_dirs: # case_dir is now the full path to the patient directory
         success = complete_case(case_dir, args.output_dir, device)
 
         if success:
