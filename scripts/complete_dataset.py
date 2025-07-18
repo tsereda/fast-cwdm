@@ -198,8 +198,13 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
     model_kwargs = {}
     with th.no_grad():
         print(f"[SAMPLING] Running {diffusion.num_timesteps}-step sampling...")
+        # Patch: wrap the model to print timesteps before forward
+        orig_model = model
+        def debug_model(x, timesteps, **kwargs):
+            print(f"[DEBUG] timesteps: shape={timesteps.shape}, dtype={timesteps.dtype}, min={timesteps.min().item()}, max={timesteps.max().item()}, device={timesteps.device}")
+            return orig_model(x, timesteps, **kwargs)
         sample = diffusion.p_sample_loop(
-            model=model,
+            model=debug_model,
             shape=noise.shape,
             noise=noise,
             cond=cond,
