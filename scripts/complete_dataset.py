@@ -263,17 +263,22 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     print(f"Noise shape: {noise.shape}")
     print(f"Conditioning shape: {cond.shape}")
     
-    # Sample
+    # Sample using p_sample_loop_progressive (correct method for Fast-DDPM)
     print(f"Running {diffusion.num_timesteps}-step sampling...")
     with th.no_grad():
-        sample = diffusion.p_sample_loop(
+        final_sample = None
+        for sample_dict in diffusion.p_sample_loop_progressive(
             model=model,
             shape=noise.shape,
+            time=diffusion.num_timesteps,  # ✅ Correct parameter for fast sampling
             noise=noise,
             cond=cond,
             clip_denoised=True,
             model_kwargs={}
-        )
+        ):
+            final_sample = sample_dict
+        
+        sample = final_sample["sample"]
     
     print(f"Sample shape: {sample.shape}")
     
