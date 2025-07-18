@@ -87,8 +87,8 @@ spec:
           ls -la ./checkpoints/
 
           python scripts/complete_dataset.py \
-            --input_dir ./datasets/BRATS2023/pseudo_validation \
-            --output_dir ./datasets/BRATS2023/pseudo_validation_completed \
+            --input_dir pseudo_validation \
+            --output_dir pseudo_validation_completed \
             --checkpoint_dir ./checkpoints \
             --device cuda:0
 
