@@ -41,8 +41,7 @@ def load_image(file_path):
     img_tensor = th.zeros(1, 240, 240, 160)
     img_tensor[:, :, :, :155] = th.tensor(img_normalized)
     
-    # CRITICAL FIX: Crop to 224x224x155 (not 160!)
-    img_tensor = img_tensor[:, 8:-8, 8:-8, :155]
+    img_tensor = img_tensor[:, 8:-8, 8:-8, :]
     
     print(f"  Preprocessed shape: {img_tensor.shape}")
     return img_tensor.float()
