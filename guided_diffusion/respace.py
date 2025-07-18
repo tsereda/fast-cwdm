@@ -125,11 +125,19 @@ class _WrappedModel:
 
 
     def __call__(self, x, ts, **kwargs):
-        map_tensor = th.tensor(self.timestep_map, device=ts.device, dtype=ts.dtype)
-        new_ts = map_tensor[ts]
-        if self.rescale_timesteps:
-            new_ts = new_ts.float() * (1000.0 / self.original_num_steps)
-        return self.model(x, new_ts, **kwargs)
+        # Fast-DDPM fix: if number of timesteps is 10 and mapping is identity, bypass mapping
+        if len(self.timestep_map) == 10 and all(i == v for i, v in enumerate(self.timestep_map)):
+            # Pass timesteps directly (should be 0..9)
+            new_ts = ts
+            if self.rescale_timesteps:
+                new_ts = new_ts.float() * (1000.0 / 10)
+            return self.model(x, new_ts, **kwargs)
+        else:
+            map_tensor = th.tensor(self.timestep_map, device=ts.device, dtype=ts.dtype)
+            new_ts = map_tensor[ts]
+            if self.rescale_timesteps:
+                new_ts = new_ts.float() * (1000.0 / self.original_num_steps)
+            return self.model(x, new_ts, **kwargs)
 
 
 
