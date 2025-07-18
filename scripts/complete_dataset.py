@@ -205,11 +205,11 @@ def prepare_conditioning(available_modalities, missing_modality, device):
 
     # First pass: collect DWT shapes for all modalities
     for modality in available_order:
-        tensor = available_modalities[modality].to(device)
-        if tensor.dim() == 4:
-            tensor = tensor.unsqueeze(1)
-        print(f"  {modality} input shape: {tensor.shape}")
-        dwt_components = dwt(tensor)
+        img = available_modalities[modality].to(device)
+        if img.dim() == 4:
+            img = img.unsqueeze(1)
+        print(f"  {modality} input shape: {img.shape}")
+        dwt_components = dwt(img)
         dwt_components_all.append(dwt_components)
         dwt_shapes.append([c.shape for c in dwt_components])
         print(f"  {modality} DWT shapes: {[c.shape for c in dwt_components]}")
