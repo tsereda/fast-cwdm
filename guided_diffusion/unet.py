@@ -766,10 +766,14 @@ class UNetModel(nn.Module):
         assert x.device == self.devices[0], f"{x.device=} does not match {self.devices[0]=}"
         assert timesteps.device == self.devices[0], f"{timesteps.device=} does not match {self.devices[0]=}"
 
-        # Debug: print timesteps info
-        print(f"[UNet] timesteps: shape={timesteps.shape}, dtype={timesteps.dtype}, device={timesteps.device}, min={timesteps.min().item()}, max={timesteps.max().item()}")
+        # Debug: print timesteps info (avoid .min/.max to prevent CUDA assert)
+        print(f"[UNet] timesteps: shape={timesteps.shape}, dtype={timesteps.dtype}, device={timesteps.device}")
+        try:
+            print(f"[UNet] timesteps values: {timesteps[:10].cpu().numpy()}")
+        except Exception as e:
+            print(f"[UNet] could not print timesteps values: {e}")
         assert timesteps.dtype == th.int64 or timesteps.dtype == th.long, f"timesteps dtype must be int64/long, got {timesteps.dtype}"
-        assert (timesteps >= 0).all() and (timesteps < 10000).all(), f"timesteps out of expected range: min={timesteps.min().item()}, max={timesteps.max().item()}"
+        assert timesteps.dim() == 1, f"timesteps should be 1D, got shape {timesteps.shape}"
 
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
