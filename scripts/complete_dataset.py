@@ -495,8 +495,7 @@ def main():
         if any(f.endswith('.nii.gz') and f.startswith('BraTS-GLI-') for f in files):
             all_potential_case_dirs.append(root)
 
-    case_dirs = sorted(list(set(all_potential_case_dirs))) # Ensure unique and sorted
-    
+    case_dirs = sorted(list(set(all_potential_case_dirs)))  # Ensure unique and sorted
     if args.max_cases is not None:
         case_dirs = case_dirs[:args.max_cases]
 
@@ -505,9 +504,8 @@ def main():
     successful = 0
     failed = 0
 
-    for case_dir in case_dirs: # case_dir is now the full path to the patient directory
+    for case_dir in case_dirs:
         success = complete_case(case_dir, args.output_dir, device)
-
         if success:
             successful += 1
         else:
