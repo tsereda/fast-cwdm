@@ -244,12 +244,28 @@ def prepare_conditioning(available_modalities, missing_modality, device):
 
 
 def synthesize_modality(available_modalities, missing_modality, checkpoint_path, device):
+    # --- Fast-DDPM inference workaround: patch beta schedule for 10-step Fast-DDPM ---
+    import numpy as np
+    import guided_diffusion.gaussian_diffusion as gd
+    def patch_beta_schedule_for_fast_ddpm(diffusion_steps, sample_schedule):
+        orig_get_named_beta_schedule = gd.get_named_beta_schedule
+        def patched_get_named_beta_schedule(schedule_name, num_diffusion_timesteps, sample_schedule_arg="direct"):
+            if num_diffusion_timesteps == 10 and sample_schedule == "sampled":
+                print("[PATCH] Fast-DDPM detected: using indices 0..9 for beta schedule")
+                indices = np.arange(10)
+                betas_1000 = np.linspace(0.0001, 0.02, 1000, dtype=np.float64)
+                betas = betas_1000[indices]
+                print(f"[PATCH] Sampled betas range: {betas[0]:.6f} → {betas[-1]:.6f}")
+                return betas
+            else:
+                return orig_get_named_beta_schedule(schedule_name, num_diffusion_timesteps, sample_schedule_arg)
+        gd.get_named_beta_schedule = patched_get_named_beta_schedule
+    # Patch before model/diffusion creation
+    sample_schedule, diffusion_steps = parse_checkpoint_info(checkpoint_path)
+    patch_beta_schedule_for_fast_ddpm(diffusion_steps, sample_schedule)
     """Synthesize the missing modality."""
     print(f"\n=== Synthesizing {missing_modality} ===")
     
-    # Parse checkpoint info
-    sample_schedule, diffusion_steps = parse_checkpoint_info(checkpoint_path)
-
     # --- Fast-DDPM fix: always use the number of steps the model was trained with ---
     # For your checkpoints (e.g., brats_t1n_BEST_sampled_10.pt), the model was trained with 10 steps
     model_steps = diffusion_steps  # This is 10 for your Fast-DDPM checkpoints
