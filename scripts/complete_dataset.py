@@ -194,54 +194,6 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
 def prepare_conditioning(available_modalities, missing_modality, device):
     """Prepare conditioning tensor from available modalities."""
     dwt = DWT_3D("haar")
-    
-    # Get modalities in consistent order
-    available_order = [m for m in MODALITIES if m != missing_modality]
-    print(f"Available modalities: {available_order}")
-    
-    cond_list = []
-    
-    for modality in available_order:
-        # Get tensor and add channel dimension
-        tensor = available_modalities[modality].to(device)
-        if tensor.dim() == 4:
-            tensor = tensor.unsqueeze(1)  # [B, 1, D, H, W]
-        
-        print(f"  {modality} input shape: {tensor.shape}")
-        
-        # Apply DWT
-        dwt_components = dwt(tensor)
-        shapes = [c.shape for c in dwt_components]
-        print(f"  {modality} DWT shapes: {shapes}")
-        
-        # Find minimum z-dimension to fix mismatches
-        min_z = min(c.shape[-1] for c in dwt_components)
-        print(f"  {modality} min z-dimension: {min_z}")
-        
-        # Crop all components to same size
-        LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt_components
-        cropped_components = [
-            LLL[:, :, :, :, :min_z] / 3.,  # Divide LLL by 3 as per training
-            LLH[:, :, :, :, :min_z],
-            LHL[:, :, :, :, :min_z],
-            LHH[:, :, :, :, :min_z],
-            HLL[:, :, :, :, :min_z],
-            HLH[:, :, :, :, :min_z],
-            HHL[:, :, :, :, :min_z],
-            HHH[:, :, :, :, :min_z]
-        ]
-        
-        # Concatenate DWT components
-        modality_cond = th.cat(cropped_components, dim=1)
-        print(f"  {modality} final conditioning: {modality_cond.shape}")
-        cond_list.append(modality_cond)
-    
-    # Concatenate all modalities
-    cond = th.cat(cond_list, dim=1)
-    print(f"Final conditioning shape: {cond.shape}")
-    
-    return cond
-    dwt = DWT_3D("haar")
 
     # Get modalities in consistent order
     available_order = [m for m in MODALITIES if m != missing_modality]
@@ -278,12 +230,21 @@ def prepare_conditioning(available_modalities, missing_modality, device):
             target_shape = min_shapes[i]
             slices = [slice(0, s) for s in target_shape]
             cropped_comp = comp[tuple(slices)]
+            # Divide LLL by 3 as per training
+            if i == 0:
+                cropped_comp = cropped_comp / 3.
             cropped.append(cropped_comp)
         # Concatenate along channel dim (should be 8)
         cond = th.cat(cropped, dim=1)
         print(f"  {modality} min z-dimension: {min([c.shape[-1] for c in cropped])}")
         print(f"  {modality} final conditioning: {cond.shape}")
         cond_list.append(cond)
+
+    # Sanity check: ensure all cond tensors have the same shape
+    cond_shapes = [c.shape for c in cond_list]
+    if len(set(cond_shapes)) != 1:
+        print(f"[ERROR] Conditioning tensors have mismatched shapes: {cond_shapes}")
+        raise RuntimeError("Conditioning tensors have mismatched shapes after cropping!")
 
     # Concatenate all modalities along channel dim
     conditioning = th.cat(cond_list, dim=1)
