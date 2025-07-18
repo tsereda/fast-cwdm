@@ -249,9 +249,11 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     
     # Parse checkpoint info
     sample_schedule, diffusion_steps = parse_checkpoint_info(checkpoint_path)
-    
-    # Create model
-    args = create_model_args(sample_schedule, diffusion_steps)
+
+    # --- Fast-DDPM fix: always use the number of steps the model was trained with ---
+    # For your checkpoints (e.g., brats_t1n_BEST_sampled_10.pt), the model was trained with 10 steps
+    model_steps = diffusion_steps  # This is 10 for your Fast-DDPM checkpoints
+    args = create_model_args(sample_schedule, model_steps)
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
