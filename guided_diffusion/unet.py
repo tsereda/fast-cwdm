@@ -766,6 +766,11 @@ class UNetModel(nn.Module):
         assert x.device == self.devices[0], f"{x.device=} does not match {self.devices[0]=}"
         assert timesteps.device == self.devices[0], f"{timesteps.device=} does not match {self.devices[0]=}"
 
+        # Debug: print timesteps info
+        print(f"[UNet] timesteps: shape={timesteps.shape}, dtype={timesteps.dtype}, device={timesteps.device}, min={timesteps.min().item()}, max={timesteps.max().item()}")
+        assert timesteps.dtype == th.int64 or timesteps.dtype == th.long, f"timesteps dtype must be int64/long, got {timesteps.dtype}"
+        assert (timesteps >= 0).all() and (timesteps < 10000).all(), f"timesteps out of expected range: min={timesteps.min().item()}, max={timesteps.max().item()}"
+
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
 
