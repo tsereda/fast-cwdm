@@ -153,10 +153,10 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
     )
     diffusion.mode = 'i2i'
 
-    # Load model weights
+    # Move model to device before loading weights to avoid device-side assert errors
     print(f"Loading model from: {model_path}")
-    model.load_state_dict(dist_util.load_state_dict(model_path, map_location="cpu"))
     model.to(device)
+    model.load_state_dict(dist_util.load_state_dict(model_path, map_location=device))
     model.eval()
 
     # Setup wavelet transforms
@@ -389,34 +389,27 @@ def complete_case(case_dir, output_dir, device):
     try:
         # Load available modalities
         available_modalities = load_modalities(case_dir, actual_case_name, missing_modality) # Pass actual_case_name
-        
         # Find model checkpoint
         model_path = find_model_checkpoint(missing_modality)
-        
         # Synthesize missing modality
         synthesized = synthesize_missing_modality(available_modalities, missing_modality, model_path, device)
-        
         # Create output directory for the actual case name
         output_case_dir = os.path.join(output_dir, actual_case_name)
         os.makedirs(output_case_dir, exist_ok=True)
-        
         # Copy existing modalities
         for filename in os.listdir(case_dir):
             if filename.endswith('.nii.gz') and not filename.startswith('missing_'):
                 src_file = os.path.join(case_dir, filename)
                 dst_file = os.path.join(output_case_dir, filename)
                 nib.save(nib.load(src_file), dst_file)
-        
         # Save synthesized modality
         synthesized_path = os.path.join(output_case_dir, f"{actual_case_name}-{missing_modality}.nii.gz")
         synthesized_np = synthesized.detach().cpu().numpy()[0]  # Remove batch dimension
-        
         # Get reference image for proper header/affine
         reference_files = [f for f in os.listdir(case_dir) if f.endswith('.nii.gz') and 
                            any(mod in f for mod in ['t1n', 't1c', 't2w', 't2f'])]
         if reference_files:
             reference_img = nib.load(os.path.join(case_dir, reference_files[0]))
-            
             # Pad back to original size if needed
             original_shape = reference_img.shape
             if synthesized_np.shape != original_shape:
@@ -427,19 +420,17 @@ def complete_case(case_dir, output_dir, device):
                 # The z-axis is cropped from 160 to 155, so we need to put it back into the first 155 slices.
                 padded[8:8+synthesized_np.shape[0], 8:8+synthesized_np.shape[1], :synthesized_np.shape[2]] = synthesized_np
                 synthesized_np = padded
-            
             synthesized_img = nib.Nifti1Image(synthesized_np, reference_img.affine, reference_img.header)
         else:
             synthesized_img = nib.Nifti1Image(synthesized_np, np.eye(4))
-        
         nib.save(synthesized_img, synthesized_path)
         print(f"Saved synthesized {missing_modality} to {synthesized_path}")
-        
         return True
-        
     except Exception as e:
         import traceback
         print(f"Error processing {actual_case_name}: {e}")
+        if 'CUDA error: device-side assert triggered' in str(e):
+            print('CUDA device-side assert triggered. For debugging, try running with CUDA_LAUNCH_BLOCKING=1')
         traceback.print_exc()
         return False
 
