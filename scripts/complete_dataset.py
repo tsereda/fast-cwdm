@@ -241,6 +241,54 @@ def prepare_conditioning(available_modalities, missing_modality, device):
     print(f"Final conditioning shape: {cond.shape}")
     
     return cond
+    dwt = DWT_3D("haar")
+
+    # Get modalities in consistent order
+    available_order = [m for m in MODALITIES if m != missing_modality]
+    print(f"Available modalities: {available_order}")
+
+    cond_list = []
+    dwt_shapes = []
+    dwt_components_all = []
+
+    # First pass: collect DWT shapes for all modalities
+    for modality in available_order:
+        tensor = available_modalities[modality].to(device)
+        if tensor.dim() == 4:
+            tensor = tensor.unsqueeze(1)
+        print(f"  {modality} input shape: {tensor.shape}")
+        dwt_components = dwt(tensor)
+        dwt_components_all.append(dwt_components)
+        dwt_shapes.append([c.shape for c in dwt_components])
+        print(f"  {modality} DWT shapes: {[c.shape for c in dwt_components]}")
+
+    # Find minimum shape for each DWT component across all modalities
+    min_shapes = []
+    for i in range(8):
+        min_shape = list(dwt_components_all[0][i].shape)
+        for comps in dwt_components_all:
+            for d in range(2, len(min_shape)):
+                min_shape[d] = min(min_shape[d], comps[i].shape[d])
+        min_shapes.append(tuple(min_shape))
+
+    # Second pass: crop all DWT components to min_shapes and stack
+    for m_idx, modality in enumerate(available_order):
+        cropped = []
+        for i, comp in enumerate(dwt_components_all[m_idx]):
+            target_shape = min_shapes[i]
+            slices = [slice(0, s) for s in target_shape]
+            cropped_comp = comp[tuple(slices)]
+            cropped.append(cropped_comp)
+        # Concatenate along channel dim (should be 8)
+        cond = th.cat(cropped, dim=1)
+        print(f"  {modality} min z-dimension: {min([c.shape[-1] for c in cropped])}")
+        print(f"  {modality} final conditioning: {cond.shape}")
+        cond_list.append(cond)
+
+    # Concatenate all modalities along channel dim
+    conditioning = th.cat(cond_list, dim=1)
+    print(f"Final conditioning shape: {conditioning.shape}")
+    return conditioning
 
 
 def synthesize_modality(available_modalities, missing_modality, checkpoint_path, device):
