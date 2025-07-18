@@ -201,7 +201,8 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
         # Patch: wrap the model to print timesteps before forward
         orig_model = model
         def debug_model(x, timesteps, **kwargs):
-            print(f"[DEBUG] timesteps: shape={timesteps.shape}, dtype={timesteps.dtype}, min={timesteps.min().item()}, max={timesteps.max().item()}, device={timesteps.device}")
+            ts_cpu = timesteps.detach().cpu()
+            print(f"[DEBUG] timesteps: shape={ts_cpu.shape}, dtype={ts_cpu.dtype}, min={ts_cpu.min()}, max={ts_cpu.max()}, device={timesteps.device}")
             return orig_model(x, timesteps, **kwargs)
         debug_model.parameters = orig_model.parameters  # Expose parameters for compatibility
         sample = diffusion.p_sample_loop(
