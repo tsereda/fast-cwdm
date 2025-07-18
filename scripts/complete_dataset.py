@@ -272,7 +272,7 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
             noise=noise,
             cond=cond,
             clip_denoised=True,
-            model_kwargs={}
+            model_kwargs={},
             time=diffusion.num_timesteps
         )
     
