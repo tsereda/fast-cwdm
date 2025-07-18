@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: default-fast-cwdm-training
+  name: fast-fast-cwdm-training
   labels:
-    app: default-fast-cwdm
+    app: fast-fast-cwdm
 spec:
   backoffLimit: 0
   template:
@@ -119,7 +119,7 @@ spec:
                   print(f'Device name: {torch.cuda.get_device_name(0)}')
               "
 
-              bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
+              bash run.sh --sampling-strategy sampled --timesteps 10 --mode train --train_modality all
               
               ls -la /data/checkpoints/
 
@@ -149,7 +149,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-3
+            claimName: brats2025-5
         - name: shm
           emptyDir:
             medium: Memory
