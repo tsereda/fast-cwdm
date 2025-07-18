@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Simple medical image synthesis script - fixes tensor shape issues
+Simple medical image synthesis script - uses training dataloader preprocessing
+FIXED: Imports preprocessing from training dataloader for consistency
 """
 
 import argparse
@@ -19,6 +20,7 @@ from guided_diffusion.script_util import (
     create_model_and_diffusion,
     args_to_dict
 )
+from guided_diffusion.bratsloader import clip_and_normalize  # ← Import from training dataloader
 from DWT_IDWT.DWT_IDWT_layer import IDWT_3D, DWT_3D
 
 # Constants
@@ -26,22 +28,20 @@ MODALITIES = ['t1n', 't1c', 't2w', 't2f']
 
 
 def load_image(file_path):
-    """Load and preprocess a single image."""
+    """Load and preprocess image EXACTLY like training dataloader."""
     print(f"Loading: {file_path}")
     
     # Load image
     img = nib.load(file_path).get_fdata()
     print(f"  Original shape: {img.shape}")
     
-    # Normalize
-    img_clipped = np.clip(img, np.quantile(img, 0.001), np.quantile(img, 0.999))
-    img_normalized = (img_clipped - np.min(img_clipped)) / (np.max(img_clipped) - np.min(img_clipped))
+    # Normalize using EXACT training function
+    img_normalized = clip_and_normalize(img)
     
-    # Convert to tensor and preprocess like training
+    # Preprocess EXACTLY like training (from bratsloader.py __getitem__)
     img_tensor = th.zeros(1, 240, 240, 160)
     img_tensor[:, :, :, :155] = th.tensor(img_normalized)
-    
-    img_tensor = img_tensor[:, 8:-8, 8:-8, :]
+    img_tensor = img_tensor[:, 8:-8, 8:-8, :]  # ✅ MATCHES training exactly
     
     print(f"  Preprocessed shape: {img_tensor.shape}")
     return img_tensor.float()
@@ -338,17 +338,24 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
     if reference_files:
         reference_img = nib.load(os.path.join(case_dir, reference_files[0]))
         
-        # Convert to numpy and pad back to original size
+        # Convert to numpy
         synthesized_np = synthesized.detach().cpu().numpy()
+        
+        # Handle z-dimension: model outputs 160 slices, original data has 155
+        if synthesized_np.shape[2] == 160:
+            print(f"  Converting from 160 to 155 slices")
+            synthesized_np = synthesized_np[:, :, :155]
         
         # Pad back to 240x240x155 (reverse the 8-pixel crop)
         padded = np.zeros((240, 240, 155))
-        padded[8:232, 8:232, :synthesized_np.shape[2]] = synthesized_np
+        padded[8:232, 8:232, :] = synthesized_np
         
         # Create NIfTI image
         synthesized_img = nib.Nifti1Image(padded, reference_img.affine, reference_img.header)
     else:
         synthesized_np = synthesized.detach().cpu().numpy()
+        if synthesized_np.shape[2] == 160:
+            synthesized_np = synthesized_np[:, :, :155]
         synthesized_img = nib.Nifti1Image(synthesized_np, np.eye(4))
     
     nib.save(synthesized_img, output_path)
@@ -403,6 +410,7 @@ def main():
     
     device = th.device(args.device if th.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    print(f"🔧 Using training dataloader preprocessing for consistency")
     
     # Find cases
     case_dirs = [d for d in os.listdir(args.input_dir) 
