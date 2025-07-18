@@ -408,25 +408,21 @@ def main():
     device = th.device(args.device if th.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # Find cases
-    case_dirs = [d for d in os.listdir(args.input_dir) 
-                if os.path.isdir(os.path.join(args.input_dir, d))]
+    # Recursively find all subdirectories containing .nii.gz files (case dirs)
+    case_dirs = []
+    for root, dirs, files in os.walk(args.input_dir):
+        if any(f.endswith('.nii.gz') for f in files):
+            case_dirs.append(root)
     case_dirs.sort()
-    
     if args.max_cases:
         case_dirs = case_dirs[:args.max_cases]
-    
     print(f"Found {len(case_dirs)} cases")
-    
     # Process cases
     os.makedirs(args.output_dir, exist_ok=True)
-    
     successful = 0
-    for case_dir_name in case_dirs:
-        case_dir = os.path.join(args.input_dir, case_dir_name)
+    for case_dir in case_dirs:
         if process_case(case_dir, args.output_dir, args.checkpoint_dir, device):
             successful += 1
-    
     print(f"\n=== Summary ===")
     print(f"Successful: {successful}/{len(case_dirs)}")
 
