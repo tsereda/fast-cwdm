@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: infer-default-cwdm
+  name: infer-fast-cwdm
   labels:
-    app: default-cwdm
+    app: fast-cwdm
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -76,14 +76,10 @@ spec:
 
           mkdir -p ./checkpoints
 
-          cp /data/checkpoints/brats_t1n_BEST_direct_1000.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t1c_BEST_direct_1000.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t2w_BEST_direct_1000.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t2f_BEST_direct_1000.pt  ./checkpoints/
-          # cp /data/checkpoints/brats_t1n_010000_sampled_10.pt ./checkpoints/
-          # cp /data/checkpoints/brats_t1c_001000_sampled_10.pt ./checkpoints/
-          # cp /data/checkpoints/brats_t2w_000050_sampled_10.pt ./checkpoints/
-          # cp /data/checkpoints/brats_t2f_000050_sampled_10.pt ./checkpoints/
+          cp /data/checkpoints/brats_t1n_BEST_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t1c_BEST_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t2w_BEST_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t2f_BEST_sampled_10.pt  ./checkpoints/
           ls -la ./checkpoints/
 
           python scripts/complete_dataset.py \
@@ -118,7 +114,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-3
+        claimName: brats2025-5
     - name: shm
       emptyDir:
         medium: Memory
