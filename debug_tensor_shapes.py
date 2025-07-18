@@ -123,11 +123,32 @@ def debug_tensor_shapes():
         # Test DWT
         dwt_outputs = dwt(dummy_input)
         print(f"✅ DWT successful: {len(dwt_outputs)} components")
-        print(f"   First component shape: {dwt_outputs[0].shape}")
+        
+        # Check all component shapes
+        LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt_outputs
+        component_shapes = [LLL.shape, LLH.shape, LHL.shape, LHH.shape, HLL.shape, HLH.shape, HHL.shape, HHH.shape]
+        print(f"   Component shapes: {component_shapes}")
+        
+        # Find minimum z-dimension
+        min_z = min(comp.shape[-1] for comp in dwt_outputs)
+        max_z = max(comp.shape[-1] for comp in dwt_outputs)
+        print(f"   Z-dimension range: {min_z} to {max_z}")
+        
+        if min_z != max_z:
+            print(f"❌ DWT components have mismatched z-dimensions, fixing by cropping...")
+            # Crop all components to the minimum z-dimension
+            LLL = LLL[:, :, :, :, :min_z]
+            LLH = LLH[:, :, :, :, :min_z]
+            LHL = LHL[:, :, :, :, :min_z]
+            LHH = LHH[:, :, :, :, :min_z]
+            HLL = HLL[:, :, :, :, :min_z]
+            HLH = HLH[:, :, :, :, :min_z]
+            HHL = HHL[:, :, :, :, :min_z]
+            HHH = HHH[:, :, :, :, :min_z]
+            print(f"✅ Cropped all components to z={min_z}")
         
         # Test conditioning tensor creation
         cond_components = []
-        LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt_outputs
         modality_cond = th.cat([LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
         cond_components.append(modality_cond)
         print(f"✅ Single modality conditioning: {modality_cond.shape}")
