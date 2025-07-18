@@ -1,3 +1,89 @@
+def parse_checkpoint_parameters(model_path):
+    """
+    Parse checkpoint filename to extract sample_schedule and diffusion_steps.
+    Updated to handle BEST pattern: brats_t1n_BEST_direct_1000.pt
+    """
+    import os
+    basename = os.path.basename(model_path)
+    parts = basename.split('_')
+    # Default values
+    sample_schedule = 'direct'
+    diffusion_steps = 1000
+    # Handle BEST pattern: brats_t1n_BEST_direct_1000.pt
+    if "_BEST_" in basename:
+        try:
+            if len(parts) >= 4:
+                sample_schedule = parts[3]  # 'direct'
+            if len(parts) >= 5:
+                steps_str = parts[4].split('.')[0]  # '1000'
+                diffusion_steps = int(steps_str)
+        except (ValueError, IndexError):
+            pass
+    # Handle regular pattern: brats_t1n_010000_direct_1000.pt
+    elif len(parts) >= 5:
+        try:
+            sample_schedule = parts[3]
+            steps_str = parts[4].split('.')[0]
+            diffusion_steps = int(steps_str)
+        except (ValueError, IndexError):
+            pass
+    elif len(parts) >= 4:
+        try:
+            sample_schedule = parts[3].split('.')[0]
+            if sample_schedule.isdigit():
+                diffusion_steps = int(sample_schedule)
+                sample_schedule = 'direct'
+        except (ValueError, IndexError):
+            pass
+    print(f"[CHECKPOINT] Parsed {basename} → schedule={sample_schedule}, steps={diffusion_steps}")
+    return {'sample_schedule': sample_schedule, 'diffusion_steps': diffusion_steps}
+
+def create_args_from_checkpoint(model_path):
+    """
+    Create an Args object for model creation, using parameters parsed from checkpoint filename.
+    """
+    params = parse_checkpoint_parameters(model_path)
+    class Args:
+        pass
+    args = Args()
+    defaults = model_and_diffusion_defaults()
+    # Set defaults
+    args.image_size = 224
+    args.num_channels = 64
+    args.num_res_blocks = 2
+    args.channel_mult = "1,2,2,4,4"
+    args.learn_sigma = False
+    args.class_cond = False
+    args.use_checkpoint = False
+    args.attention_resolutions = ""
+    args.num_heads = 1
+    args.num_head_channels = -1
+    args.num_heads_upsample = -1
+    args.use_scale_shift_norm = False
+    args.dropout = 0.0
+    args.resblock_updown = True
+    args.use_fp16 = False
+    args.use_new_attention_order = False
+    args.dims = 3
+    args.num_groups = 32
+    args.in_channels = 32  # 8 + 8*3 for conditioning
+    args.out_channels = 8
+    args.bottleneck_attention = False
+    args.resample_2d = False
+    args.additive_skips = False
+    args.use_freq = False
+    args.predict_xstart = True
+    args.noise_schedule = "linear"
+    args.timestep_respacing = ""
+    args.use_kl = False
+    args.rescale_timesteps = False
+    args.rescale_learned_sigmas = False
+    args.mode = 'i2i'
+    args.dataset = "brats"
+    # Set from checkpoint
+    args.sample_schedule = params['sample_schedule']
+    args.diffusion_steps = params['diffusion_steps']
+    return args
 """
 Complete missing modalities in pseudo-validation dataset.
 This is the core script that bridges synthesis and segmentation evaluation.
@@ -81,56 +167,86 @@ def load_modalities(case_dir, case_name, missing_modality):
     return loaded_modalities
 
 
-def find_model_checkpoint(missing_modality, checkpoint_dir="/data/checkpoints"):
-    """Find the latest checkpoint for the missing modality."""
-    # Look for model files matching the pattern
-    pattern = f"brats_{missing_modality}_*_*.pt"
-    checkpoint_files = glob.glob(os.path.join(checkpoint_dir, pattern))
-    
+def find_model_checkpoint(missing_modality, checkpoint_dir="./checkpoints"):
+    """Find the latest checkpoint for the missing modality, handling BEST naming pattern."""
+    import glob
+    import os
+    # Try different naming patterns
+    patterns = [
+        f"brats_{missing_modality}_BEST_*.pt",      # BEST pattern
+        f"brats_{missing_modality}_*_*.pt",         # Regular pattern
+        f"*{missing_modality}*.pt"                  # Fallback pattern
+    ]
+    checkpoint_files = []
+    for pattern in patterns:
+        files = glob.glob(os.path.join(checkpoint_dir, pattern))
+        if files:
+            checkpoint_files.extend(files)
+            break  # Use first pattern that finds files
     if not checkpoint_files:
         raise FileNotFoundError(f"No checkpoint found for modality {missing_modality} in {checkpoint_dir}")
-    
-    # Sort by iteration number (extract from filename)
-    def extract_iteration(filename):
+    # Helper to extract iteration number and schedule info
+    def extract_info(filename):
         basename = os.path.basename(filename)
+        # Handle BEST pattern: brats_t1n_BEST_direct_1000.pt
+        if "_BEST_" in basename:
+            parts = basename.split('_')
+            try:
+                schedule = parts[3] if len(parts) > 3 else 'direct'
+                steps_str = parts[4].split('.')[0] if len(parts) > 4 else '1000'
+                steps = int(steps_str)
+                return 999999, schedule, steps  # High priority for BEST models
+            except (ValueError, IndexError):
+                return 999999, 'direct', 1000
+        # Handle regular pattern: brats_t1n_010000_direct_1000.pt  
         parts = basename.split('_')
         try:
-            return int(parts[2])  # brats_t1n_001000_direct_1000.pt -> 001000
-        except (IndexError, ValueError):
-            return 0
-    
-    checkpoint_files.sort(key=extract_iteration, reverse=True)
-    selected_checkpoint = checkpoint_files[0]
-    
+            iter_num = int(parts[2]) if len(parts) > 2 else 0
+            schedule = parts[3] if len(parts) > 3 else 'direct'
+            steps_str = parts[4].split('.')[0] if len(parts) > 4 else '1000'
+            steps = int(steps_str)
+            return iter_num, schedule, steps
+        except (ValueError, IndexError):
+            return 0, 'direct', 1000
+    # Sort by iteration number (BEST models get highest priority)
+    checkpoint_info = [(extract_info(f), f) for f in checkpoint_files]
+    checkpoint_info.sort(reverse=True, key=lambda x: x[0][0])  # Sort by iteration number
+    selected_checkpoint = checkpoint_info[0][1]
+    iter_num, schedule, steps = checkpoint_info[0][0]
     print(f"Selected checkpoint for {missing_modality}: {selected_checkpoint}")
+    print(f"  Schedule: {schedule}, Steps: {steps}, Iteration: {iter_num}")
     return selected_checkpoint
 
 
 def synthesize_missing_modality(available_modalities, missing_modality, model_path, device):
-    """Synthesize the missing modality using the trained model."""
+    """Synthesize the missing modality using the trained model with dynamic parameters."""
     print(f"Synthesizing {missing_modality}...")
-    
-    # Create model and diffusion
-    args = create_default_args()
+
+    # 🔥 Parse checkpoint parameters automatically
+    checkpoint_params = parse_checkpoint_parameters(model_path)
+    print(f"[INFERENCE] Using {checkpoint_params['sample_schedule']} schedule with {checkpoint_params['diffusion_steps']} steps")
+
+    # Create model and diffusion with detected parameters
+    args = create_args_from_checkpoint(model_path)
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     diffusion.mode = 'i2i'
-    
+
     # Load model weights
     print(f"Loading model from: {model_path}")
     model.load_state_dict(dist_util.load_state_dict(model_path, map_location="cpu"))
     model.to(device)
     model.eval()
-    
+
     # Setup wavelet transforms
     dwt = DWT_3D("haar")
     idwt = IDWT_3D("haar")
-    
+
     # Get available modalities in consistent order
     modality_order = ['t1n', 't1c', 't2w', 't2f']
     available_order = [m for m in modality_order if m != missing_modality]
-    
+
     # Move tensors to device and ensure 5D shape [B, C, D, H, W]
     cond_tensors = []
     for modality in available_order:
@@ -138,23 +254,24 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
         if tensor.dim() == 4:
             tensor = tensor.unsqueeze(1)  # Add channel dimension: [B, 1, D, H, W]
         cond_tensors.append(tensor)
-    
+
     # Create conditioning vector using DWT
     cond_list = []
     for tensor in cond_tensors:
         LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(tensor)
         modality_cond = th.cat([LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
         cond_list.append(modality_cond)
-    
+
     # Concatenate all conditioning modalities
     cond = th.cat(cond_list, dim=1)
-    
+
     # Generate noise
     noise = th.randn(1, 8, 112, 112, 80).to(device)
-    
-    # Sample from model
+
+    # Sample from model using detected parameters
     model_kwargs = {}
     with th.no_grad():
+        print(f"[SAMPLING] Running {diffusion.num_timesteps}-step sampling...")
         sample = diffusion.p_sample_loop(
             model=model,
             shape=noise.shape,
@@ -163,7 +280,7 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
             clip_denoised=True,
             model_kwargs=model_kwargs
         )
-    
+
     # Convert back to spatial domain
     B, _, D, H, W = sample.size()
     sample = idwt(
@@ -176,21 +293,21 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
         sample[:, 6, :, :, :].view(B, 1, D, H, W),
         sample[:, 7, :, :, :].view(B, 1, D, H, W)
     )
-    
+
     # Post-process
     sample[sample <= 0] = 0
     sample[sample >= 1] = 1
-    
+
     # Use first available modality as mask
     mask_modality = cond_tensors[0]
     sample[mask_modality == 0] = 0  # Zero out non-brain parts
-    
+
     if len(sample.shape) == 5:
         sample = sample.squeeze(dim=1)
-    
+
     # Crop to original resolution
     sample = sample[:, :, :, :155]
-    
+
     return sample
 
 

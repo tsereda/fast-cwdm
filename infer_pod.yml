@@ -6,7 +6,6 @@ metadata:
     app: fast-cwdm
 spec:
   nodeSelector:
-    #topology.kubernetes.io/region: us-west
     nautilus.io/linstor: "true"
   affinity:
     nodeAffinity:
@@ -37,47 +36,31 @@ spec:
           value: /app/fast-cwdm
         - name: CUDA_VISIBLE_DEVICES
           value: "0"
-        - name: nnUNet_raw
-          value: /app/nnunet/raw
-        - name: nnUNet_preprocessed
-          value: /app/nnunet/preprocessed
-        - name: nnUNet_results
-          value: /app/nnunet/results
         - name: PYTHONUNBUFFERED
           value: "1"
         - name: PYTHONIOENCODING
           value: "UTF-8"
-        - name: WANDB_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: wandb-credentials
-              key: api-key
-        - name: WANDB_PROJECT
-          value: "cwmd-3d-brats"
-        - name: WANDB_ENTITY
-          value: "timgsereda"
         - name: WANDB_MODE
-          value: "online"
-        - name: USE_TENSORBOARD
-          value: "true"
+          value: "offline"  # Disable wandb for inference
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone -b eval2 https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
+          git clone https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
           cd ${REPO_PATH}
           
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
           
+          # Extract datasets
           for dataset in "TrainingData" "ValidationData"; do
             zip_file="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}.zip"
             if [ -f "$zip_file" ]; then
               echo "Extracting ${dataset}..."
               cd /data && 7z x "$zip_file" -y
-              #sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}"
               cd ${REPO_PATH}
             fi
           done
 
+          # Create directory structure
           mkdir -p datasets/BRATS2023/training
           mkdir -p datasets/BRATS2023/validation
           
@@ -93,24 +76,52 @@ spec:
             echo "Validation data copied successfully"
           fi
 
+          # Install dependencies
           pip install nibabel blobfile wandb batchgenerators simpleITK gdown
-          echo "dropping modalities"
+          
+          echo "Creating pseudo validation set..."
           python scripts/drop_modality.py
+          
+          # Create checkpoints directory and copy models
           mkdir -p ./checkpoints
-          # cp /data/checkpoints/brats_t1n_010000_direct_1000.pt ./checkpoints/
-          # cp /data/checkpoints/brats_t1c_001000_direct_1000.pt ./checkpoints/
-          # cp /data/checkpoints/brats_t2w_000050_direct_1000.pt ./checkpoints/
-          # cp /data/checkpoints/brats_t2f_000050_direct_1000.pt ./checkpoints/
-          cp /data/checkpoints/brats_t1n_010000_sampled_10.pt ./checkpoints/
-          cp /data/checkpoints/brats_t1c_001000_sampled_10.pt ./checkpoints/
-          cp /data/checkpoints/brats_t2w_000050_sampled_10.pt ./checkpoints/
-          cp /data/checkpoints/brats_t2f_000050_sampled_10.pt ./checkpoints/
-          echo "Models copied:" && ls -la ./checkpoints/
+          
+          echo "Available checkpoints in /data/checkpoints:"
+          ls -la /data/checkpoints/*.pt
+          
+          # Copy the BEST models and rename them to expected format
+          if [ -f "/data/checkpoints/brats_t1n_BEST_direct_1000.pt" ]; then
+            cp /data/checkpoints/brats_t1n_BEST_direct_1000.pt ./checkpoints/brats_t1n_BEST_direct_1000.pt
+            echo "Copied t1n model"
+          fi
+          
+          if [ -f "/data/checkpoints/brats_t1c_BEST_direct_1000.pt" ]; then
+            cp /data/checkpoints/brats_t1c_BEST_direct_1000.pt ./checkpoints/brats_t1c_BEST_direct_1000.pt
+            echo "Copied t1c model"
+          fi
+          
+          if [ -f "/data/checkpoints/brats_t2w_BEST_direct_1000.pt" ]; then
+            cp /data/checkpoints/brats_t2w_BEST_direct_1000.pt ./checkpoints/brats_t2w_BEST_direct_1000.pt
+            echo "Copied t2w model"
+          fi
+          
+          if [ -f "/data/checkpoints/brats_t2f_BEST_direct_1000.pt" ]; then
+            cp /data/checkpoints/brats_t2f_BEST_direct_1000.pt ./checkpoints/brats_t2f_BEST_direct_1000.pt
+            echo "Copied t2f model"
+          fi
+          
+          echo "Models copied:" 
+          ls -la ./checkpoints/
+          
+          echo "Running inference..."
           python scripts/complete_dataset.py \
             --input_dir ./datasets/BRATS2023/pseudo_validation \
             --output_dir ./datasets/BRATS2023/pseudo_validation_completed \
             --checkpoint_dir ./checkpoints \
-            --device cuda:0
+            --device cuda:0 \
+            --max_cases 5
+
+          echo "Inference completed! Results:"
+          ls -la ./datasets/BRATS2023/pseudo_validation_completed/
 
           tail -f /dev/null
      
@@ -138,7 +149,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-1
+        claimName: brats2025-3
     - name: shm
       emptyDir:
         medium: Memory
