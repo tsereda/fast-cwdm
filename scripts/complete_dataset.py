@@ -155,7 +155,10 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
 
     # Load model weights on CPU first, then move to CUDA (prevents device-side assert)
     print(f"Loading model from: {model_path}")
-    model.load_state_dict(dist_util.load_state_dict(model_path, map_location="cpu"))
+    state_dict = dist_util.load_state_dict(model_path, map_location="cpu")
+    print("[DEBUG] Model state_dict keys:", list(state_dict.keys())[:10], "... total:", len(state_dict))
+    model.load_state_dict(state_dict)
+    print(f"[DEBUG] Moving model to device: {device}")
     model.to(device)
     model.eval()
 
@@ -170,10 +173,13 @@ def synthesize_missing_modality(available_modalities, missing_modality, model_pa
     # Move tensors to device and ensure 5D shape [B, C, D, H, W]
     cond_tensors = []
     for modality in available_order:
-        tensor = available_modalities[modality].to(device)
+        tensor = available_modalities[modality]
+        print(f"[DEBUG] Input tensor for {modality}: shape={tensor.shape}, dtype={tensor.dtype}, min={tensor.min().item()}, max={tensor.max().item()}")
+        tensor = tensor.to(device)
         if tensor.dim() == 4:
             tensor = tensor.unsqueeze(1)  # Add channel dimension: [B, 1, D, H, W]
         cond_tensors.append(tensor)
+    print(f"[DEBUG] cond_tensors shapes: {[t.shape for t in cond_tensors]}")
 
     # Create conditioning vector using DWT
     cond_list = []
